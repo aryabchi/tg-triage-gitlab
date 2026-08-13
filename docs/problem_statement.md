@@ -73,27 +73,28 @@ AI используется там, где требуется понимание
 ## 5. Основной workflow
 
 ```mermaid
-flowchart TD
-    U[Пользователь] --> TG[Telegram]
-    TG --> IN[Telegram Intake]
-    IN --> PS[(Problem Store)]
 
-    O[List Owner] -->|Compile problems since X| TA[Triage Agent]
+flowchart TD
+    U["User"] --> TG["Telegram"]
+    TG --> IN["Issue Intake - DETERMINISTIC"]
+    IN --> PS[("Problem Store")]
+
+    O["List Owner"] -->|Compile problems since X| TA["Triage Agent - LLM / AGENTIC"]
 
     PS --> TA
-    TA --> GL[GitLab Projects / Issues / PRs]
+    TA --> GL["GitLab Knowledge: Projects / README / Issues / PRs"]
 
-    TA --> TL[Triage List]
+    TA --> TL["Triage List"]
     TL --> O
 
-    TA --> UR[Uncertain Problems]
+    TA --> UR["Uncertain Problems"]
     UR --> O
 
-    O --> MD[Final Markdown]
-    MD --> MP[Markdown Parser]
+    O --> MD["Final Markdown"]
+    MD --> MP["Markdown Parser - DETERMINISTIC"]
 
-    MP --> GE[GitLab Executor]
-    GE --> GI[GitLab Issues]
+    MP --> GE["GitLab Executor - DETERMINISTIC"]
+    GE --> GI["GitLab Issues"]
 ```
 
 ---
