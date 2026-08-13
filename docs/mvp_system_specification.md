@@ -1,182 +1,379 @@
-# MVP System Specification: Telegram Problems to GitLab Issues
+# MVP System Specification: Telegram Problems to GitHub Issues
 
 ## 1. Purpose
 
-The MVP demonstrates a basic end-to-end workflow for turning unstructured user-reported problems into GitLab Issues.
+The MVP demonstrates a basic end-to-end workflow for turning unstructured user-reported problems into GitHub Issues.
 
 The intended flow is:
 
 ```text
 User problem
     ↓
-Telegram
+Telegram bot (group)
     ↓
 Persistent Problem
     ↓
-AI-assisted triage using GitLab as contextual knowledge
+AI-assisted triage using a GitHub snapshot as context
     ↓
-Human prioritization
+Owner edits one Markdown contract (outside Telegram)
     ↓
-Final Markdown
-    ↓
-GitLab Issue creation
+Deterministic GitHub Issue creation / skip
 ```
 
-The MVP is a demonstration of the workflow, not a production-grade issue-management platform.
+The MVP is a **demonstration of the workflow**, not a production-grade issue-management platform. It must be demonstrable in **less than two weeks**. Simplicity is a major constraint.
 
-The primary goal is to demonstrate that an agent can:
+Corporate **GitLab** adoption is a **later phase**, after this MVP is accepted. For the MVP, GitHub is the issue tracker globally.
 
-* ingest arbitrary natural-language problems;
+The primary goal is to demonstrate that the system can:
+
+* ingest arbitrary natural-language problems from Telegram;
 * accumulate them;
 * understand and group related reports;
-* use existing GitLab projects and issues as context;
-* identify likely existing issues or projects;
+* use existing GitHub repositories and issues as context;
+* identify likely existing issues or repositories;
 * recommend priorities;
 * explicitly report uncertainty;
 * consume a human-approved Markdown representation;
-* create GitLab Issues.
+* create GitHub Issues (or skip when an existing issue is referenced).
+
+A central principle:
+
+> **LLM recommends; deterministic application logic executes.**
+
+The LLM never creates issues. The owner's Markdown is the only authority for GitHub writes.
 
 ---
 
-# 2. MVP scope
+## 2. What this revision locks
 
-## In scope
+This document supersedes the previous GitLab-oriented draft. The following decisions are closed for the MVP:
+
+| Topic | Decision |
+|---|---|
+| Intake | One **Telegram bot** (new). Not a channel. |
+| Reporter vs owner | Reporters post in a **group**. Owner compiles and executes in a **private DM** with the bot. |
+| Trigger | Telegram commands: `/compile <since-date>` and `/execute` (optionally `/execute <run-id>`). |
+| HITL | Owner **edits the generated Markdown** in an external editor. No UI. No second agent. |
+| Round-trip | **Option A:** bot sends a `.md` document; owner uploads the edited file; `/execute` uses the **stored upload**. |
+| Tracker | **GitHub Issues** for the MVP. Several demo repositories are pre-created. |
+| Knowledge | **Static snapshot** of those repos (fixtures in this repo), produced by a refresh script. `/compile` does not call GitHub for reads. |
+| Execution | **Live GitHub Issues API** (create or skip). |
+| Triage | **Deterministic orchestrator** that calls an LLM for semantic judgments. Not an autonomous tool-using agent. |
+| Artifact | **One Markdown contract** for recommendation, human edit, and execution. |
+| Created issues | Each created issue looks like a **normal GitHub issue** (`title` + markdown `body`, optional labels). |
+
+---
+
+## 3. In scope
 
 ### Input
 
-* Telegram bot/channel.
-* Users submit free-form natural-language problem statements.
+* One Telegram bot.
+* Users submit free-form natural-language problem statements in a group chat.
 * No required reporting format.
-* No conversational clarification with the user.
+* No conversational clarification with the reporter.
 
 ### Persistence
 
-Every Telegram report becomes a persistent `Problem`.
+Every eligible Telegram report becomes a persistent `Problem`.
 
 The system stores:
 
 * original problem text;
-* Telegram metadata available from the message;
-* source/message identifier;
+* Telegram message id;
+* chat/group id;
+* Telegram user identifier;
 * timestamp;
-* basic lifecycle information.
+* basic lifecycle (at least: ingested; later linked to a created or existing issue).
+
+Do not persist an open-ended metadata bag.
 
 ### AI triage
 
-When requested by the List Owner, the system analyzes Problems from a specified period.
+When the List Owner sends `/compile <since-date>` in a DM, the system analyzes Problems from that period against the GitHub fixture snapshot.
 
-The agent may:
+The orchestrator / LLM may:
 
 * summarize/normalize problems;
-* identify related or duplicate user reports;
-* search GitLab;
-* identify possible existing GitLab Issues;
-* identify a likely GitLab Project;
+* cluster related Telegram reports into one `TriageItem`;
+* identify a likely GitHub repository (`owner/repo` from the configured list);
+* identify a possible existing GitHub Issue;
 * recommend priority;
-* provide a short rationale/evidence;
-* mark problems as uncertain when it cannot confidently assign them.
+* provide a short rationale;
+* mark an item `uncertain` when it cannot confidently classify it.
 
 ### Human decision
 
-The List Owner reviews the agent's recommendations.
+The List Owner reviews the generated Markdown, edits it outside Telegram, and uploads it.
 
 The owner may:
 
-* select problems;
+* change repository;
 * change priority;
-* change project;
-* merge/group problems;
-* modify titles/descriptions;
-* decide whether a new GitLab Issue should be created.
+* merge/group items by editing the file;
+* modify titles/bodies;
+* set `action: create` or `action: skip` (with `existing: owner/repo#n`);
+* resolve or leave `uncertain` items;
+* exclude items (omit them or mark them so they are not executed).
 
-The final Markdown produced by the owner is considered authoritative.
+The uploaded Markdown is authoritative.
 
-### GitLab execution
+### GitHub execution
 
-The system parses the final Markdown and creates GitLab Issues.
+The system parses the uploaded Markdown, validates the whole plan, asks for a short Confirm/Cancel, then creates GitHub Issues or records skips.
 
 ---
 
-# 3. Explicitly out of scope
+## 4. Out of scope for this MVP
 
-The MVP does not attempt to handle:
+Items below are out of scope either as product non-goals or because they were **given up to fit a &lt;2 week demo**. They are listed so they are not reintroduced during implementation.
 
-* user clarification conversations;
-* Jira integration;
-* integration with other support systems;
+### Product non-goals (keep out even after the demo unless explicitly reopened)
+
+* user clarification conversations with reporters;
+* Jira or other support-system intake;
 * source-code analysis;
-* automatic project/system catalog construction;
+* automatic company-wide project/system catalog construction;
 * sophisticated triage UI;
+* Telegram Mini App / in-bot editor;
 * autonomous final prioritization;
 * automatic merging of duplicates without human approval;
-* automatic creation of GitLab Issues directly from agent recommendations;
-* comprehensive error/retry handling;
+* automatic creation of issues directly from LLM output (no human Markdown);
+* commenting on, closing, or otherwise mutating existing issues;
 * production-scale operation;
-* complex authorization model;
-* multi-agent architecture.
+* complex authorization (beyond an owner Telegram user-id allowlist in config);
+* multi-agent architecture;
+* extra knowledge corpora (Wiki, Confluence, internal docs, knowledge bases) in the running system;
+* vector database / RAG / semantic retrieval infrastructure.
 
-The MVP should favor a simple, demonstrable workflow over completeness.
+### Given up specifically for the &lt;2 week constraint
+
+* **Autonomous tool-using triage agent** — replaced by a deterministic two-stage workflow with LLM calls.
+* **Live GitHub reads during `/compile`** — replaced by checked-in fixtures plus a refresh script.
+* **GitHub search / per-item issue retrieval** — matching is against the snapshot only.
+* **Pull requests / merge requests as knowledge**.
+* **Numeric confidence scores** (`project_confidence`). Use `known` vs `unknown` / `uncertain`.
+* **Per-field uncertainty** (uncertain about repo and issue independently). One item-level `outcome` is enough.
+* **Persisted `HumanDecision` aggregate** — the uploaded Markdown (and its parse) is the decision.
+* **Second owner interface** (web UI, “decision agent”, chat-paste of the contract).
+* **Local-disk execute (Option B)** as the product path — `/execute` must not depend on a path on the bot host, because the owner may switch phone ↔ laptop.
+* **Pasting the contract as Telegram text** — 4096-character limit and parse-mode mismatch.
+* **Incremental / overlapping-period intelligence** — a new `/compile` is an independent run; a pending run is superseded.
+* **Noise classification** (spam, “not a bug”) — demo reports are assumed to be real problems.
+* **Writing comments onto existing GitHub issues** when skipping.
+* **GitHub Projects** (the board product) — “project” means a **repository**.
+* **Multi-tracker runtime** (GitHub and GitLab at once).
+* **Production error/retry platform** — only: schema validation, validate-all-then-write, persist created URLs so a retry does not duplicate.
+* **Multi-channel intake framework** — Telegram only. `Problem` remains the seam for later channels.
+
+The MVP favors a closed-world, demonstrable workflow over completeness.
 
 ---
 
-# 4. System boundaries
+## 5. Assumptions and simplifications
 
-The MVP consists of four primary subsystems.
+Each item is an agreed MVP assumption, why it exists, and whether it blocks a later move to corporate GitLab.
+
+### 5.1 GitHub is the MVP tracker; GitLab is next phase
+
+**Assumption:** Demo repositories live on GitHub. Issues are created via the GitHub Issues API.
+
+**Rationale:** Faster closed demo; GitHub issue shape is familiar; several pre-created repos are enough to show clustering, matching, uncertainty, and create/skip.
+
+**GitLab transition:** **Does not block.** Keep the domain tracker-neutral (`repository` / `issue number` / create-or-skip). GitHub is the first adapter. Do not scatter GitHub URLs and REST paths through the workflow; confine them to a thin client. GitLab will need a different client (project path, issue IID, auth, labels vs GitLab fields) and a different refresh script. The Telegram, Problem, triage, Markdown-authority, and HITL loop stay.
+
+### 5.2 Closed demo world
+
+**Assumption:** A small, named list of GitHub repositories in config. Tens of Problems per demo. Seeded issues that match sample Telegram wording. `K` newest **open** issues per repo in the snapshot (excluding pull requests), with truncated bodies.
+
+**Rationale:** Avoids search, catalog discovery, and RAG.
+
+**GitLab transition:** **Does not block.** The same bounded catalog idea applies to a GitLab group. A later phase may replace fixtures with live GitLab reads or keep snapshots. Do not build instance-wide crawl now.
+
+### 5.3 Knowledge is a static snapshot
+
+**Assumption:** `/compile` reads fixture files only. A **refresh script** (operator-run, not the bot) pulls configured repos → metadata + README excerpt + top K open issues → writes fixtures. Missing fixtures fail the run. After the demo **creates** new issues, the snapshot is stale until refresh.
+
+**Rationale:** Reproducible demo; no read-API failure mid-presentation; two-week risk drop.
+
+**GitLab transition:** **Does not block.** The evidence *shape* (project/repo identity, short description, issue title/body, numbers) ports. Refresh targets GitLab APIs instead. Live reads can be reintroduced later without changing triage outcomes. **Honesty cost:** matching is against a snapshot, not live GitLab/GitHub. Acceptable for MVP; a corporate phase should treat drift as a real operational concern.
+
+### 5.4 Telegram bot, group + owner DM, Option A round-trip
+
+**Assumption:** One bot. Group text → Problems. Owner DM: `/compile`, document out, edited document in, `/execute` against stored upload, Confirm/Cancel. Owner Telegram user id(s) in config. Commands and documents are never Problems. The contract is sent as an **unparsed `.md` document** (not chat text; Telegram MarkdownV2 ≠ GitHub-flavored Markdown). No timeout on a pending run. A new `/compile` supersedes a previous pending run with a one-line warning.
+
+**Rationale:** Phone ↔ laptop switching and a long edit require the DM to carry the file. Reply-to-message alone is too fragile after a device switch; persist the upload on the run.
+
+**GitLab transition:** **Does not block.** Entirely independent of the tracker.
+
+### 5.5 One Markdown contract
+
+**Assumption:** Recommendation, owner edit, and execution share one schema. Exact heading syntax may still be elaborated, but the file must express `create` / `skip` / `uncertain`, `owner/repo`, problem ids, title, body, optional labels/priority, and optional `existing: owner/repo#n`.
+
+**Rationale:** Two formats would require a translation step there is no time for. Skip/link cannot be executed if the file cannot say “do not create.”
+
+**GitLab transition:** **Does not block** if identifiers stay generic (`repo`/`project` path + issue number). GitLab-specific fields (confidential, epic, weight) are **not** in the MVP contract; adding them later is a contract extension, not a rewrite of HITL.
+
+### 5.6 Created GitHub issues are ordinary issues
+
+**Assumption:** Create payload is `title` + markdown `body` (problem ids referenced in the body where practical). Labels only if they already exist on the demo repos. No GitHub Projects, milestones, or assignees required for MVP.
+
+**Rationale:** Maps directly onto GitHub’s issue API; looks like a normal issue in the demo.
+
+**GitLab transition:** **Does not block.** GitLab issue create is also title + description (+ labels). Priority-as-label vs Markdown-only grouping must be re-checked against the corporate GitLab (no native priority on many instances). That is a field-mapping task.
+
+### 5.7 Deterministic triage, not an agent
+
+**Assumption:** Two-stage application workflow:
+
+1. Load Problems in period + fixtures. LLM normalizes and clusters. **Coverage:** every Problem in the period appears in exactly one `TriageItem`.
+2. For each item, LLM proposes repository / existing issue / priority / rationale / `uncertain` **using only the snapshot**. Application **validates** against the configured repo list and known issue numbers (reject invented repos/issues).
+
+**Rationale:** Autonomous tool loops are the largest two-week reliability risk. The procedure is known and finite.
+
+**GitLab transition:** **Does not block.** This is the intended long-term control pattern. Later, fixtures can be replaced by a GitLab retrieval adapter behind the same “evidence pack” input.
+
+### 5.8 Uncertain is a first-class item outcome
+
+**Assumption:** There is no parallel `Uncertain Problem[]` collection. An uncertain report is a `TriageItem` with `outcome = uncertain`, rendered in an `## Uncertain` section.
+
+**Rationale:** Coverage invariant; grouping and uncertainty can apply together (three reports, still unknown repo).
+
+**GitLab transition:** **Does not block.** Domain concept, not tracker-specific.
+
+### 5.9 Skip existing issues; do not write to them
+
+**Assumption:** If the item matches an existing issue, recommend `action: skip` and record `owner/repo#n`. Execution does not comment, close, or label that issue.
+
+**Rationale:** Detecting “already filed” is enough for the demo; mutating existing issues adds API and permission surface.
+
+**GitLab transition:** **Does not block.** A later phase may add “comment with Telegram evidence” as a new execution action. The MVP contract should not invent that action.
+
+### 5.10 Priority is a recommendation
+
+**Assumption:** The LLM may suggest a priority. The owner may change it in Markdown. Mapping onto GitHub is either a **pre-created label** or Markdown grouping only. It is not assumed to be a native GitHub field.
+
+**Rationale:** GitHub (and many GitLab licenses) have no native priority field.
+
+**GitLab transition:** **Does not block**, but corporate GitLab may use labels, boards, or another field. Re-derive the write mapping then. Do not treat P1/P2 headings as a GitLab API contract.
+
+### 5.11 Additional company knowledge is not in the MVP
+
+**Assumption:** The only knowledge besides Telegram Problems is the GitHub fixture snapshot. No Confluence/Wiki/RAG in runtime.
+
+**Rationale:** Unjustified by demo size; RAG would consume the two-week budget.
+
+**GitLab transition:** **Does not block** if triage consumes an **evidence pack**, not “the GitHub API.” Later sources (GitLab wiki, Confluence) can be additional retrievers that produce the same kind of snippet-with-provenance. Do **not** add a document platform now.
+
+### 5.12 Single persistence store; local demo process
+
+**Assumption:** One store for Problems, TriageRuns, uploaded contract bytes, and execution results. The bot may run as a local process with polling for the demo.
+
+**Rationale:** Two-week hosting simplicity.
+
+**GitLab transition:** **Does not block.** Persistence and hosting are independent of GitLab.
+
+---
+
+## 6. System boundaries
+
+Four **workflow stages**. Human Decision is a **role + artifact**, not a software service.
 
 ```text
 ┌──────────────────────────────────────────────────────────┐
-│                    1. ISSUE INTAKE                       │
+│                 1. PROBLEM INTAKE                        │
 │                                                          │
-│ Telegram → persistent Problems                          │
+│ Group text (not commands/documents) → Problem            │
 └──────────────────────────┬───────────────────────────────┘
                            │
                            ▼
 ┌──────────────────────────────────────────────────────────┐
-│                    2. TRIAGE ENGINE                      │
+│                 2. TRIAGE ENGINE                         │
+│     deterministic orchestrator + LLM judgments           │
 │                                                          │
-│ Problems + GitLab context → Triage recommendations       │
+│ Problems + GitHub fixtures → Markdown contract           │
 └──────────────────────────┬───────────────────────────────┘
                            │
                            ▼
 ┌──────────────────────────────────────────────────────────┐
-│                  3. HUMAN DECISION                       │
+│                 3. HUMAN DECISION                        │
+│            (owner; not a subsystem)                      │
 │                                                          │
-│ Triage recommendations → final Markdown                 │
+│ Edit .md outside Telegram → upload in owner DM           │
 └──────────────────────────┬───────────────────────────────┘
                            │
                            ▼
 ┌──────────────────────────────────────────────────────────┐
-│                 4. GITLAB EXECUTION                      │
+│                 4. GITHUB EXECUTION                      │
 │                                                          │
-│ Final Markdown → GitLab Issues                           │
+│ Stored upload → parse → validate all → confirm           │
+│              → create or skip GitHub Issues              │
 └──────────────────────────────────────────────────────────┘
 ```
 
-Persistence is a cross-cutting concern shared by the workflow rather than a separate business subsystem.
+**GitHub read vs write are separate.** Fixtures (and the refresh script) are the read path. Execution is the write path. The LLM has no GitHub token for creates.
+
+Persistence is cross-cutting (Problems, runs, uploads, execution results), not a fifth business subsystem.
+
+A thin **application orchestrator** owns Telegram commands, run state, and the confirm step. That is not the LLM.
 
 ---
 
-# 5. Subsystem 1 — Issue Intake
+## 7. Telegram interaction model
 
-## Responsibility
+### Chats
 
-Receive Telegram messages and persist them as Problems.
+| Chat | Who | What |
+|---|---|---|
+| Group | Reporters | Free-text problems |
+| DM with the bot | List Owner only | `/compile`, receive `.md`, upload edited `.md`, `/execute`, Confirm/Cancel |
 
-The Intake subsystem does not attempt to decide whether a problem is valid, important, duplicated, or related to a particular GitLab Project.
+### Intake rules
+
+* Commands never become Problems (in group or DM).
+* Documents never become Problems.
+* Only normal user **text** in the **group** becomes a Problem.
+* Owner control happens in DM. Group `/compile` / `/execute` are rejected.
+
+### Commands
+
+* `/compile <since-date>` — start a `TriageRun` for Problems since that date; send `triage-run-<id>.md`.
+* `/execute` or `/execute <run-id>` — parse the **stored owner upload** for that run (not the bot’s original attachment, which is stale after edit).
+* Confirm / Cancel after a parsed plan, before any GitHub write.
+
+### Round-trip (Option A)
+
+```text
+Owner /compile
+    → bot sendDocument (unparsed .md)
+    → owner edits outside Telegram (any device)
+    → owner uploads edited .md in the same DM
+    → bot stores bytes on the TriageRun
+    → Owner /execute [run-id]
+    → bot parses stored upload, shows plan, Confirm
+    → GitHub create/skip; reply with URLs
+```
+
+A local `triage-runs/` copy may exist for debugging. It is **not** what `/execute` reads.
+
+---
+
+## 8. Stage 1 — Problem Intake
+
+### Responsibility
+
+Receive eligible Telegram group messages and persist them as Problems. Intake does not classify, group, or assign a repository.
 
 The original user statement must be preserved.
 
-## Input
-
-A Telegram message containing:
+### Input
 
 ```text
 text
-Telegram user metadata
-message ID
+telegram user id
+message id
+group/chat id
 timestamp
-channel/chat metadata
-other available Telegram metadata
 ```
 
 Example:
@@ -186,558 +383,401 @@ Example:
 It just keeps loading."
 ```
 
-## Output
+### Output
 
-A persisted `Problem`.
-
-Conceptually:
+A persisted `Problem`:
 
 ```text
 Problem
 ├── id
 ├── original_text
 ├── telegram_message_id
+├── telegram_chat_id
 ├── telegram_user
 ├── created_at
-└── telegram_metadata
+└── lifecycle
 ```
 
-## Processing type
+### Processing type
 
-**Deterministic.**
-
-The MVP does not require an LLM during ingestion.
+**Deterministic.** No LLM during ingestion.
 
 ---
 
-# 6. Subsystem 2 — Triage Engine
+## 9. Stage 2 — Triage Engine
 
-## Responsibility
+### Responsibility
 
-Analyze accumulated Problems and produce recommendations for the List Owner.
+Analyze accumulated Problems and emit the Markdown contract.
 
-This is the main agentic subsystem.
+This is **not** an autonomous agent. It is a deterministic workflow that calls an LLM for semantic judgments and validates the result against fixtures.
 
-The List Owner can request something conceptually equivalent to:
+### Trigger
 
-```text
-"Compile all problems received since 2026-08-01."
-```
+Owner DM: `/compile 2026-08-01` (conceptually: compile problems received since that date).
 
-The Triage Engine retrieves the relevant Problems and investigates them using GitLab context.
+### Inputs
 
-## Inputs
+* `Problem[]` for the requested period.
+* GitHub **fixture snapshot** for the configured repository list.
 
-### From Problem Store
+### Processing (two stages)
 
-```text
-Problem[]
-```
+1. **Cluster:** LLM produces canonical summaries and groups related reports. Application checks coverage (every Problem id in the period appears once).
+2. **Match:** LLM, given the fixture pack, proposes repository, existing issue or create, priority, rationale, or `uncertain`. Application rejects invented `owner/repo` or issue numbers.
 
-### From GitLab
+### Responsibilities per `TriageItem`
 
-The agent may access repository-related information including:
-
-* GitLab Projects;
-* project metadata;
-* README;
-* existing Issues;
-* Merge Requests / Pull Requests;
-* other non-source-code repository/project information available through GitLab APIs.
-
-**Source code is explicitly excluded from MVP scope.**
-
-## Agent responsibilities
-
-For each Problem or group of related Problems, the agent should attempt to determine:
-
-### 1. Problem summary
-
-Produce a concise canonical representation of the reported problem.
-
-### 2. Related/duplicate reports
-
-Determine whether multiple Telegram Problems appear to represent the same underlying problem.
-
-Example:
-
-```text
-Problem #101
-"Sales export doesn't work"
-
-Problem #107
-"Can't export sales report"
-
-Problem #113
-"Dashboard export is stuck loading"
-```
-
-can become one Triage Item:
-
-```text
-Problems: #101, #107, #113
-Summary: Sales dashboard export is not functioning
-```
-
-### 3. Existing GitLab Issue
-
-Determine whether an existing GitLab Issue appears to represent the same underlying problem.
-
-This is distinct from duplicate Telegram reports.
-
-Both relationships must be supported.
-
-### 4. GitLab Project
-
-Identify the GitLab Project that most likely corresponds to the problem.
-
-The agent should infer this from available GitLab information.
-
-There is no separate system catalog in the MVP.
-
-### 5. Priority recommendation
-
-Recommend a priority based on the available problem/context information.
-
-The priority is explicitly a **recommendation**.
-
-The List Owner makes the final decision.
-
-### 6. Rationale
-
-Provide a short explanation supporting the recommendation.
-
-The MVP does not require elaborate chain-of-thought storage. The result should contain concise, user-facing evidence/rationale.
-
-### 7. Uncertainty
-
-If the agent cannot confidently determine the relevant project, existing issue, or other required classification, the item must be reported as uncertain rather than forced into an arbitrary classification.
+1. **Summary** — concise canonical statement.
+2. **Report clustering** — multiple Telegram Problems → one item when they describe the same underlying problem.
+3. **Issue matching** — whether an existing GitHub Issue in the snapshot represents that problem (distinct from clustering; **both may apply to one item**).
+4. **Repository** — one of the configured `owner/repo` values, or unknown.
+5. **Priority recommendation** — owner decides finally.
+6. **Rationale** — short, user-facing; no chain-of-thought storage.
+7. **Uncertainty** — if repository or other required classification cannot be supported by the snapshot, `outcome = uncertain`. Do not invent a repository to complete the file.
 
 ---
 
-# 7. Triage output
+## 10. GitHub knowledge (fixtures)
 
-The conceptual domain object is a `TriageItem`.
-
-```text
-TriageItem
-├── problem_ids[]
-├── summary
-├── suggested_project
-├── project_confidence
-├── existing_gitlab_issue
-├── suggested_priority
-├── rationale
-└── uncertainty
-```
-
-A triage run therefore produces:
+There is no live catalog crawl and no separate System Catalog product.
 
 ```text
-TriageRun
-├── requested period
-├── TriageItem[]
-└── Uncertain Problem[]
+refresh script (operator)
+    → fixtures (configured repos, README excerpts,
+      top K open issues excluding PRs, truncated bodies)
+    → /compile reads files only
 ```
+
+```text
+                    Fixture snapshot
+                       │
+          ┌────────────┼────────────┐
+          ▼            ▼            ▼
+    Repo metadata   README      Open issues
+          │            │            │
+          └────────────┼────────────┘
+                       ▼
+              Triage orchestrator + LLM
+                       │
+             repository / issue inference
+```
+
+The LLM may return `repository = unknown`. Quality of classification depends on what was seeded into GitHub **and then refreshed into fixtures**. Seed demo duplicates so they appear in the top-K open-issue window.
 
 ---
 
-# 8. Duplicate semantics
+## 11. Clustering vs issue matching
 
-The MVP recognizes two different kinds of duplication.
+These are different relations. Do not call both “duplicates.”
 
-## A. Duplicate Telegram reports
+### Report clustering
 
-Multiple users may independently report the same problem.
+Multiple users independently report the same problem:
 
 ```text
 Telegram #101 ─┐
-Telegram #107 ─┼──→ one Triage Item
+Telegram #107 ─┼──→ one TriageItem
 Telegram #113 ─┘
 ```
 
-## B. Existing GitLab Issue
+### Issue matching
 
-A newly reported problem may already be represented by a GitLab Issue.
+That item may already exist as a GitHub Issue:
 
 ```text
-Telegram Problems
+TriageItem (Problems #101, #107, #113)
         ↓
-Triage Item
+existing GitHub issue owner/repo#438
         ↓
-existing GitLab Issue #438
+recommend action: skip (do not create)
 ```
 
-The agent should recommend not creating another Issue in this case.
-
-The MVP does not automatically merge or close anything.
+The realistic case is **both on one item**. The MVP does not automatically merge or close anything.
 
 ---
 
-# 9. Uncertainty handling
+## 12. Uncertainty
 
-Uncertainty is an explicit valid outcome.
+Uncertainty is an explicit valid **outcome of a `TriageItem`**, rendered as its own section in the Markdown contract.
 
-For example:
+Example shape (syntax not frozen):
 
 ```markdown
 ## Uncertain
 
-### Problem #129
-
-- Project: unknown
-- Reason: insufficient information to identify the relevant GitLab Project
-- Possible projects:
-  - customer-portal
-  - crm
-```
-
-The List Owner can subsequently make the decision.
-
-The agent must not invent a project merely to make the output complete.
-
----
-
-# 10. Subsystem 3 — Human Decision
-
-## Responsibility
-
-Turn the Triage Engine's recommendations into an authoritative list of intended GitLab Issues.
-
-The actual interaction mechanism is intentionally unspecified for the MVP.
-
-It may be:
-
-* manual editing;
-* chat with another agent;
-* a simple UI;
-* direct editing of Markdown.
-
-The architecture should not depend on one particular interface.
-
-## Input
-
-```text
-TriageRun
-```
-
-## Human actions
-
-The List Owner can:
-
-* select items;
-* change priority;
-* change GitLab Project;
-* merge related problems;
-* edit title;
-* edit description;
-* decide whether an existing GitLab Issue should be reused;
-* exclude items.
-
-## Output
-
-Final Markdown.
-
-The final Markdown represents the owner's authoritative decision.
-
----
-
-# 11. Final Markdown format
-
-The Markdown should be human-readable but structured enough for deterministic parsing.
-
-The minimum fields should **not be treated as an independent product decision**. They must be derived from the GitLab Issue creation specification supported by the GitLab version/API used by the project.
-
-The architecture should therefore first establish:
-
-```text
-GitLab Issue specification
-        ↓
-Required/supported fields
-        ↓
-Minimal Markdown contract
-        ↓
-GitLab Issue creation
-```
-
-A possible MVP representation is:
-
-```markdown
-# GitLab Issues
-
-## P1
-
-### Sales dashboard export is broken
-- Project: `sales-dashboard`
-- Problems: #101, #107, #113
-- Description: Sales dashboard export is not functioning.
-
 ### Customer synchronization is delayed
-- Project: `crm`
-- Problems: #124
-- Description: Customer synchronization is significantly delayed.
-
-## P2
-
-### Dashboard loading is slow
-- Project: `sales-dashboard`
-- Problems: #131
-- Description: Dashboard takes an unusually long time to load.
+- Repo: unknown
+- Action: uncertain
+- Problems: #103
+- Reason: insufficient information to choose acme/crm vs acme/customer-portal
 ```
 
-The exact fields and syntax should be finalized after checking the GitLab Issue API/specification rather than invented independently.
+The owner can resolve this in the edit (set repo + `action: create` or `skip`) or leave it. Uncertain items are not executed as creates.
+
+The system must not invent a repository merely to make the output complete. Application validation against the config list enforces that.
 
 ---
 
-# 12. Subsystem 4 — GitLab Execution
+## 13. Domain model
 
-## Responsibility
-
-Convert the final Markdown into GitLab Issues.
-
-This subsystem should be primarily deterministic.
-
-## Input
-
-```text
-Final Markdown
-```
-
-## Processing
-
-```text
-Markdown
-   ↓
-Parse
-   ↓
-Validate
-   ↓
-Resolve GitLab Project
-   ↓
-Create GitLab Issue
-```
-
-For each selected item, the executor should create an Issue in the specified GitLab Project.
-
-The Issue should contain the fields required by the selected GitLab Issue specification.
-
-References to originating Problem IDs should be included where practical.
-
-## Output
-
-An execution result containing created GitLab Issues and their URLs.
-
-Example:
-
-```text
-Execution Result
-
-Created:
-- sales-dashboard#812
-- crm#421
-
-Skipped:
-- sales-dashboard#438
-  Reason: existing issue referenced by owner
-```
-
-For MVP purposes, complex failure/retry behavior is out of scope.
-
----
-
-# 13. End-to-end workflow
-
-```mermaid
-flowchart TD
-    U[User] --> TG[Telegram]
-    TG --> IN[Issue Intake<br/>DETERMINISTIC]
-    IN --> PS[(Problem Store)]
-
-    O[List Owner] -->|Compile problems since X| TA[Triage Agent<br/>LLM / AGENTIC]
-
-    PS --> TA
-    TA --> GL[GitLab Knowledge<br/>Projects / README / Issues / PRs]
-
-    TA --> TL[Triage List]
-    TL --> O
-
-    TA --> UR[Uncertain Problems]
-    UR --> O
-
-    O --> MD[Final Markdown]
-    MD --> MP[Markdown Parser<br/>DETERMINISTIC]
-
-    MP --> GE[GitLab Executor<br/>DETERMINISTIC]
-    GE --> GI[GitLab Issues]
-```
-
----
-
-# 14. Agent vs deterministic responsibilities
-
-| Activity                            | Implementation                   |
-| ----------------------------------- | -------------------------------- |
-| Receive Telegram message            | Deterministic                    |
-| Extract Telegram metadata           | Deterministic                    |
-| Persist Problem                     | Deterministic                    |
-| Retrieve Problems by date           | Deterministic                    |
-| Understand natural-language problem | **LLM**                          |
-| Group similar Problems              | **LLM / semantic retrieval**     |
-| Search GitLab                       | Deterministic tool               |
-| Interpret GitLab context            | **LLM**                          |
-| Identify likely Project             | **LLM**                          |
-| Identify existing Issue             | **LLM + GitLab retrieval**       |
-| Recommend priority                  | **LLM**                          |
-| Report uncertainty                  | **LLM + application validation** |
-| Human prioritization                | Human                            |
-| Parse final Markdown                | Deterministic                    |
-| Validate Markdown                   | Deterministic                    |
-| Resolve GitLab Project              | Deterministic                    |
-| Create GitLab Issue                 | Deterministic                    |
-| Return Issue URL                    | Deterministic                    |
-
-A central architectural principle is:
-
-> **LLM recommends; deterministic application logic executes.**
-
----
-
-# 15. Initial domain model
-
-The MVP should conceptually contain the following entities.
+MVP entities:
 
 ```text
 Problem
-    Represents one original Telegram report.
+    One original Telegram report.
 
 TriageRun
-    Represents one request to analyze a set of Problems.
+    One /compile request: period, status (pending / superseded /
+    awaiting_execute / executed / cancelled), generated Markdown,
+    stored owner upload, execution result.
 
 TriageItem
-    Represents one canonical problem produced by triage.
-    It may correspond to one or multiple Problems.
+    One canonical problem in a run. One or more Problem ids.
+    outcome: create_new | link_existing | uncertain | exclude
+    suggested repository, optional existing issue, priority,
+    summary, rationale.
 
-HumanDecision
-    Represents the owner's final decision.
-    May be implicit in the final Markdown in the MVP.
-
-GitLabIssueLink
-    Associates a Problem/TriageItem with an existing or newly created
-    GitLab Issue.
+ExecutionResult
+    Per executed item: created owner/repo#n + URL, or skipped
+    existing owner/repo#n, plus Problem ids.
 ```
 
-The MVP does not require a sophisticated domain model beyond this.
+There is **no** `HumanDecision` entity. There is **no** free-floating `GitLabIssueLink`. Links live on the item / `ExecutionResult`.
+
+**Invariants**
+
+* Every Problem in the run’s period appears in exactly one `TriageItem`.
+* LLM output is schema-validated (one retry or fail the run). Invented repos/issues are rejected.
+* No GitHub writes until the whole plan validates and the owner confirms.
 
 ---
 
-# 16. GitLab as knowledge source
+## 14. Markdown contract
 
-There is deliberately no separate System Catalog in the MVP.
+Human-readable, strictly parseable. **One schema** for the file the bot generates, the owner edits, and execution reads.
 
-The agent learns about available systems/projects from GitLab.
-
-Conceptually:
+Item fields must be derived from what GitHub issue **create** supports for this demo, plus workflow fields GitHub does not have:
 
 ```text
-                    GitLab
-                       │
-          ┌────────────┼────────────┐
-          ▼            ▼            ▼
-       Projects      Issues       PRs
-          │            │            │
-          └────────────┼────────────┘
-                       ▼
-                Triage Agent
-                       │
-             project / issue inference
+GitHub Issue create (title, body, optional labels)
+        +
+workflow fields (action, repo, problem ids, existing issue, uncertain)
+        ↓
+Minimal Markdown contract
+        ↓
+GitHub Issue create / skip
 ```
 
-This means the quality of project classification depends on the information available in GitLab.
+Illustrative shape (exact headings/syntax to be finalized in architecture, not independently as a product):
 
-The agent should therefore be allowed to return:
+```markdown
+# GitHub Issues
+# run: 7
+# since: 2026-08-13
 
-```text
-project = unknown
+## Create
+
+### Sales dashboard export hangs
+- Repo: acme/sales-dashboard
+- Action: create
+- Problems: #101, #102
+- Labels: P1
+- Body: |
+    Sales dashboard export never finishes (spinner).
+    Reported by 2 users.
+
+## Skip
+
+### Sales dashboard export hangs
+- Repo: acme/sales-dashboard
+- Action: skip
+- Existing: acme/sales-dashboard#81
+- Problems: #104
+- Body: |
+    Same as already filed issue #81.
+
+## Uncertain
+
+### Customer synchronization is delayed
+- Repo: unknown
+- Action: uncertain
+- Problems: #103
+- Reason: Could be acme/crm or acme/customer-portal
 ```
 
-rather than making an unsupported assignment.
+Each **created** GitHub issue should look like a normal issue: title from the heading, body from `Body` (including problem id references where practical).
+
+The parser must refuse unknown actions. Uncertain items are not creates.
 
 ---
 
-# 17. MVP success criteria
+## 15. Stage 3 — Human Decision
 
-The MVP is successful if a demo can show the following complete scenario:
+Not a software subsystem.
 
-1. Several users submit free-form problems to Telegram.
+**Input:** generated Markdown document in the owner DM.  
+**Work:** edit outside Telegram.  
+**Output:** uploaded Markdown, stored on the `TriageRun`.
+
+Other interfaces (UI, decision agent, disk-path execute) are future work.
+
+---
+
+## 16. Stage 4 — GitHub Execution
+
+### Responsibility
+
+Convert the stored uploaded Markdown into GitHub side effects. Deterministic.
+
+### Processing
+
+```text
+Stored upload
+   ↓
+Parse
+   ↓
+Validate entire plan (schema, repos in config, skip targets look like owner/repo#n)
+   ↓
+Show plan; Confirm / Cancel
+   ↓
+For each create: GitHub Issues API
+For each skip: record link; do not write to the existing issue
+   ↓
+Persist ExecutionResult (URLs) so retry does not duplicate creates
+```
+
+Resolve `owner/repo` from config, not from a short ambiguous name.
+
+### Output
+
+```text
+Created:
+- acme/sales-dashboard#81  <url>
+- acme/crm#12              <url>
+
+Skipped:
+- acme/sales-dashboard#81
+  Reason: existing issue referenced by owner; problem #104 recorded
+```
+
+Complex retry platforms are out of scope. Partial-create recovery = persist what succeeded and skip those items on a later `/execute`.
+
+---
+
+## 17. LLM vs deterministic responsibilities
+
+| Activity | Implementation |
+|---|---|
+| Receive Telegram group text | Deterministic |
+| Ignore commands and documents | Deterministic |
+| Persist Problem | Deterministic |
+| Owner allowlist / DM-only control | Deterministic |
+| Retrieve Problems by date | Deterministic |
+| Load GitHub fixtures | Deterministic |
+| Refresh fixtures from GitHub | Operator script (not the bot) |
+| Understand natural-language problem | **LLM** |
+| Cluster similar Problems | **LLM** (no embeddings) |
+| Interpret fixture context | **LLM** |
+| Identify likely repository | **LLM** + validation against config |
+| Identify existing issue | **LLM** + validation against snapshot numbers |
+| Recommend priority | **LLM** (weak; owner may override) |
+| Report uncertainty | **LLM** + application validation |
+| Emit / parse Markdown contract | Deterministic (LLM fills semantic fields via structured output) |
+| Owner edit | Human |
+| Confirm before write | Human + deterministic |
+| Create GitHub Issue | Deterministic |
+| Skip existing issue | Deterministic |
+| Return Issue URL | Deterministic |
+
+---
+
+## 18. End-to-end workflow
+
+```mermaid
+flowchart TD
+    U[Reporter] --> TG[Telegram group]
+    TG --> IN[Problem Intake<br/>DETERMINISTIC]
+    IN --> PS[(Problem Store)]
+
+    O[List Owner DM] -->|/compile since date| ORCH[Orchestrator]
+    ORCH --> TE[Triage workflow<br/>LLM judgments + validation]
+    PS --> TE
+    FX[(GitHub fixtures)] --> TE
+    TE --> MD[Markdown contract document]
+
+    MD --> O
+    O -->|edit outside Telegram| ED[Edited .md]
+    ED -->|upload in DM| ORCH
+    O -->|/execute| EX[Parser + validator<br/>DETERMINISTIC]
+    EX -->|Confirm| GE[GitHub Executor<br/>DETERMINISTIC]
+    GE --> GI[GitHub Issues]
+```
+
+Refresh of fixtures is **outside** this runtime loop.
+
+---
+
+## 19. MVP success criteria
+
+The MVP is successful if a demo can show:
+
+1. Several users submit free-form problems in the Telegram group.
 2. Problems appear in persistent storage.
-3. The List Owner requests a compilation for a time period.
-4. The agent analyzes the accumulated Problems.
-5. The agent finds at least some meaningful relationships between Problems and GitLab.
-6. The agent identifies:
+3. The List Owner `/compile`s for a time period in a DM.
+4. The system analyzes those Problems against the GitHub snapshot.
+5. It finds meaningful relationships between Problems and GitHub.
+6. It identifies:
+   * clustered user reports;
+   * an existing GitHub Issue (skip);
+   * a likely GitHub repository;
+   * a suggested priority.
+7. At least one item is correctly surfaced as **uncertain**.
+8. The owner edits the Markdown (including resolving or leaving uncertain, and create vs skip).
+9. The owner uploads the file and `/execute`s (with confirm).
+10. The system creates corresponding GitHub Issues and records skips with URLs.
 
-   * duplicate user reports;
-   * existing GitLab Issues;
-   * likely GitLab Projects;
-   * suggested priorities.
-7. At least one uncertain problem is correctly surfaced as uncertain.
-8. The List Owner modifies/approves the proposed list.
-9. The owner produces the final Markdown.
-10. The system creates corresponding GitLab Issues.
+The demo must make **human + system collaboration** visible. It must not demonstrate autonomous issue creation.
 
-The demo should make the **human + agent collaboration** visible rather than attempting to demonstrate autonomous operation.
-
----
-
-# 18. Deliberate MVP simplifications
-
-The following should remain consciously simple:
-
-* one input channel: Telegram;
-* one external work-management system: GitLab;
-* one persistence store;
-* one primary triage agent;
-* no user interaction after report submission;
-* no source-code inspection;
-* no sophisticated UI required;
-* no automatic final decisions;
-* no edge-case handling required for the demo;
-* no need for a multi-agent architecture.
-
-The architecture should nevertheless leave room for future expansion.
-
-For example:
-
-```text
-Telegram ────────┐
-                 │
-Jira ────────────┼──→ Intake
-                 │
-Support System ──┘
-```
-
-can be added later without changing the core Problem/Triage model.
+Demo fixtures should include: two similar export reports (clustering), one vague report (uncertain), and a later report that matches an already created issue (skip).
 
 ---
 
-# 19. Architectural discussion starting point
+## 20. Transition to corporate GitLab
 
-Use this document as the **MVP baseline** for further architectural discussion.
+The MVP is designed so GitLab can replace GitHub **without rewriting** intake, Problem/TriageRun/TriageItem, HITL, or “LLM recommends / code executes.”
 
-Future architectural decisions should answer:
+| MVP choice | Blocks GitLab? | What changes later |
+|---|---|---|
+| GitHub as tracker | No | Swap issue-tracker client; identifiers become GitLab project path + IID |
+| Fixture snapshot knowledge | No | Refresh script talks to GitLab; optionally live reads |
+| Bounded config repo list | No | Bounded GitLab project list / group |
+| Markdown create/skip/uncertain | No | Field names and GitLab-specific attributes |
+| Ordinary issue title+body | No | GitLab description; re-map labels/priority |
+| No comments on existing issues | No | New optional execution action |
+| No RAG / extra corpora | No | Evidence-pack port; add retrievers only if a real corpus exists |
+| Telegram Option A | No | Unchanged |
+| Deterministic orchestrator | No | Unchanged; this is the intended core |
+| GitHub-specific types in the domain | **Would block if done** | Keep domain tracker-neutral |
 
-* How should Telegram ingestion be implemented?
-* What persistence technology is appropriate?
-* How should GitLab information be retrieved and searched?
-* What agent/tool boundaries are appropriate?
-* How should TriageRun/TriageItem state be represented?
-* How should the agent produce structured output?
-* How should the Markdown contract be derived from and validated against the GitLab Issue specification?
-* How should GitLab Projects and Issues be resolved?
-* How should the application orchestrate the workflow?
-* **What additional information sources may be available to the Triage Agent besides Telegram Problems and GitLab repository/project information?** For example, internal documentation, Wiki, Confluence, knowledge bases, or other company documentation. If such sources are required, the architecture may need a separate document-ingestion and retrieval layer, potentially including semantic/vector search.
+**Do not** build a multi-tracker plugin framework in the MVP. **Do** avoid naming core entities `GitHubIssue` / `GitLabIssue` and avoid calling GitHub from the orchestrator except through a small client used only by execution (and by the refresh script for fixtures).
+
+---
+
+## 21. What remains for architecture (not product)
+
+Product and workflow questions in this document are closed. Architecture may still choose:
+
+* persistence technology (one local store);
+* Telegram client / polling vs webhook (polling is enough for the demo);
+* LLM provider and structured-output mechanism;
+* exact Markdown heading/list syntax within the contract shape above;
+* fixture file layout and `K` / truncation constants;
+* whether priority is a pre-created GitHub label or Markdown-only;
+* package layout.
 
 Do not expand MVP scope unless a new requirement is explicitly identified.
 
-The primary architectural objective is:
+The primary objective:
 
-> **Build the smallest reliable system that demonstrates the complete workflow from an unstructured Telegram problem to a human-approved GitLab Issue, with the LLM responsible for semantic analysis and recommendations and deterministic code responsible for persistence, state management, parsing, and external side effects.**
+> **Build the smallest reliable system that demonstrates the complete workflow from an unstructured Telegram problem to a human-approved GitHub Issue, with the LLM responsible for semantic analysis and recommendations and deterministic code responsible for persistence, state management, parsing, and external side effects. GitLab is the next tracker, not part of this MVP.**
