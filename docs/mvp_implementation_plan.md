@@ -1,10 +1,14 @@
 # MVP implementation plan
 
-Greenfield Python project. Spec and architecture are locked: [mvp_system_specification.md](mvp_system_specification.md), [mvp_architecture.md](mvp_architecture.md). Follow [`.cursor/rules/implementation.mdc`](../.cursor/rules/implementation.mdc): Python 3.13, `pyproject.toml`, dedicated venv, type hints, no unnecessary `Any`, ports for every external system, secrets only via env.
+Greenfield Python project. Spec and architecture are locked: [MVP System Specification](mvp_system_specification.md), [MVP Architecture](mvp_architecture.md). Follow [implementation rules](../.cursor/rules/implementation.mdc): Python 3.13, `pyproject.toml`, dedicated venv, type hints, no unnecessary `Any`, ports for every external system, secrets only via env.
 
 A greenfield Python 3.13 bot that ingests Telegram group problems, compiles a validated Markdown contract via a two-stage LLM workflow against GitHub fixtures, then creates or skips GitHub issues only after the owner uploads and confirms. Every step is independently testable with fakes; live Telegram/GitHub/LLM appear only as explicit smoke steps.
 
 Do not implement GitLab, RAG, labels-on-create, comments on existing issues, webhooks, or an agent loop.
+
+**Fake tracker world.** Seed, refresh, drop, and fixtures use only **made-up** repositories invented for this demo (`sales-dashboard`, `crm`, `customer-portal` under a configurable owner). Do not clone, fork, snapshot, or attach to any pre-existing GitHub repository. Live GitHub is used only to **create those new fake repos** under the operator’s `GITHUB_OWNER` (see [Open questions](#8-open-questions)).
+
+**Language.** Workflow field names in the Markdown contract stay as locked in [MVP Architecture, Markdown Contract](mvp_architecture.md#markdown-contract-renderer--parser) (`Repo`, `Problems`, `Body`, …). User-facing content in seed `meta` / README / issues, test fixtures, canned problem texts, and demo Telegram messages is **Russian** where it is prose (titles, bodies, descriptions).
 
 ---
 
@@ -16,17 +20,32 @@ Build **inside-out**, one verifiable slice at a time. Domain and application ser
 
 **Control principle, enforced by construction:** LLM recommends structured JSON → application validates → deterministic code renders Markdown, parses the owner file, and performs GitHub writes. The LLM never receives a GitHub token and never authors the contract file.
 
-**Locked implementation choices** (architecture deferred these; this plan does not):
+**Locked implementation choices** (architecture deferred library choice in [MVP Architecture, Remaining architectural questions](mvp_architecture.md#13-remaining-architectural-questions); this plan locks it):
 
 - Package: `tg_triage` under `src/`
-- Telegram library: `python-telegram-bot` v21+ (long polling, `Application`)
+- Telegram library: `python-telegram-bot` v21+ (long polling, `Application`) — rationale below
 - HTTP: `httpx` (GitHub + OpenAI-compatible LLM)
 - LLM DTOs / config: `pydantic` v2 + `pydantic-settings`
 - Tests: `pytest` (+ `pytest-asyncio` only for Telegram adapter tests)
 - DB: stdlib `sqlite3`, one file (tests use a temp file or `:memory:`)
 - App services stay **sync**; the Telegram adapter is the async shell
 
-**LLM integration (initial implementation — locked here)**
+### Telegram library: `python-telegram-bot` vs `aiogram`
+
+Architecture left the Bot API library to implementation ([MVP Architecture, Remaining architectural questions](mvp_architecture.md#13-remaining-architectural-questions)). Both wrap the same Telegram Bot API and long polling. The choice does not change ports, domain, or Option A.
+
+| | `python-telegram-bot` v21+ | `aiogram` 3.x |
+|---|---|---|
+| Fit to this MVP | Thin `Application` + handlers around a sync orchestrator | Full async framework with routers and an FSM we would not use |
+| Polling | First-class `run_polling`; matches [MVP Architecture, Key architectural decisions](mvp_architecture.md#12-key-architectural-decisions) (single process, no webhook) | Also supports polling; more ceremony to stay “just handlers” |
+| Documents / no parse_mode | Direct `send_document` for unparsed `.md` (Option A in [MVP System Specification, Telegram interaction model](mvp_system_specification.md#7-telegram-interaction-model)) | Equivalent, slightly more boilerplate |
+| Testing | Handlers can be called with synthetic updates; we still fake `TelegramGateway` | Same idea; FSM extras unused |
+| Cost | v21 is async-first, so handlers `asyncio.to_thread` into sync services | Native async; would push the application layer async for little gain |
+| Ecosystem | Very common for “small official-style bots”; stable Handler API | Very common in Russian-language tutorials; heavier than this bot |
+
+**Choice: `python-telegram-bot` v21+.** This bot is a thin adapter over a deterministic orchestrator, not a conversational FSM product. `python-telegram-bot` maps onto “poll, dispatch, sendDocument, inline Confirm/Cancel” with less framework surface. `aiogram`’s FSM and router model would be unused complexity. The async tax (`to_thread` around sync services) is acceptable and keeps application tests synchronous.
+
+### LLM integration (initial implementation — locked here)
 
 Isolation:
 
@@ -62,7 +81,7 @@ Invalid / uncertain handling:
 - Semantic uncertainty → `outcome = uncertain`, rendered under `## Uncertain`, not executed as create
 - Owner may move a `###` block between `## Create` / `## Skip` / `## Uncertain`, or delete it (exclude; Problems stay `ingested`)
 
-Default runtime: OpenRouter `openai/gpt-oss-20b:free`. Offline fallback is config-only (`LLM_BASE_URL=http://localhost:11434/v1`, `LLM_MODEL=qwen3:8b`). No model router.
+**Provider order (config, not a router):** prefer OpenRouter `openai/gpt-oss-20b:free` (`LLM_BASE_URL=https://openrouter.ai/api/v1`). If that path is unavailable, the **same host machine** runs Ollama `qwen3:8b` and the operator switches env to `LLM_BASE_URL=http://localhost:11434/v1`, `LLM_MODEL=qwen3:8b`, empty/unused `LLM_API_KEY`. Defaults and when tokens are required: [Open questions](#8-open-questions).
 
 **Minimum useful test level per major component**
 
@@ -75,10 +94,10 @@ Default runtime: OpenRouter `openai/gpt-oss-20b:free`. Offline fallback is confi
 - LLM HTTP client: **unit** (httpx mock) — do not call live LLM in CI
 - Triage orchestrator: **integration** (fake LLM + real validator/renderer + temp SQLite)
 - Application orchestrator (run state): **integration** (all ports faked)
-- GitHub adapter: **unit** (mocked HTTP); **smoke** live create (explicit step)
-- Seed/refresh scripts: **unit** (mocked HTTP); **smoke** live (explicit step)
-- Telegram adapter: **unit** (no network; fake `TelegramGateway` / recorded bot methods); **smoke** live polling (explicit step)
-- Full workflow: **end-to-end with fakes** in CI; **real E2E** only for the two demo scenarios
+- GitHub adapter: **unit** (mocked HTTP); **smoke** live create ([Step 13](#step-13--live-github-smoke-operator))
+- Seed / refresh / drop scripts: **unit** (mocked HTTP); **smoke** live seed+refresh ([Step 13](#step-13--live-github-smoke-operator)); drop is destructive and opt-in
+- Telegram adapter: **unit** (no network; fake `TelegramGateway` / recorded bot methods); **smoke** live polling ([Step 15](#step-15--live-telegram-smoke-operator))
+- Full workflow: **end-to-end with fakes** in CI; **real E2E** only for the two demo scenarios in [Two concrete real end-to-end demo scenarios](#7-two-concrete-real-end-to-end-demo-scenarios)
 
 ---
 
@@ -93,7 +112,7 @@ Order is risk-first and demo-path, not package-taxonomy.
 5. LLM port + validators + triage orchestrator — semantic stage, still fully fakeable
 6. Application orchestrator — wires compile/upload/execute/supersede without Telegram
 7. Fake E2E — proves the architecture before any live API
-8. GitHub adapter + seed/refresh (mocked, then live smoke) — tracker writes and demo world
+8. GitHub adapter + seed / refresh / drop (mocked, then live smoke) — tracker writes and a disposable fake demo world
 9. Telegram adapter (fakes, then live smoke) — last runtime I/O; Option A round-trip
 10. Live LLM compile smoke + full demo rehearsal — only after the workflow is deterministic
 
@@ -107,18 +126,18 @@ Telegram last: polling and chat IDs do not change domain behavior. GitHub seed b
 
 ### Step 1 — Project skeleton and configuration
 
-**Purpose.** Installable Python 3.13 package, venv, test runner, env-based secrets, closed-world repo list.
+**Purpose.** Installable Python 3.13 package, venv, test runner, env-based secrets, closed-world **fake** repo list.
 
 **Create/modify:**
 
 - [pyproject.toml](../pyproject.toml) — `requires-python = ">=3.13,<3.14"`; deps: `python-telegram-bot`, `httpx`, `pydantic`, `pydantic-settings`; dev: `pytest`, `ruff`
 - [src/tg_triage/__init__.py](../src/tg_triage/__init__.py), [src/tg_triage/config.py](../src/tg_triage/config.py)
-- [config/demo.yaml](../config/demo.yaml) — `repositories: [owner/sales-dashboard, owner/crm, owner/customer-portal]`, `k: 10`, `readme_max_chars: 2000`, `issue_body_max_chars: 1000`
-- [.env.example](../.env.example) — `TELEGRAM_BOT_TOKEN`, `TELEGRAM_GROUP_CHAT_ID`, `TELEGRAM_OWNER_USER_IDS`, `GITHUB_TOKEN`, `GITHUB_OWNER`, `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`, `SQLITE_PATH`
+- [config/demo.yaml](../config/demo.yaml) — `repositories: [acme/sales-dashboard, acme/crm, acme/customer-portal]` as the **fictional** closed list used in tests; live overlay replaces `acme` with `GITHUB_OWNER` (see [Open questions](#8-open-questions)). `k: 10`, `readme_max_chars: 2000`, `issue_body_max_chars: 1000`
+- [.env.example](../.env.example) — `TELEGRAM_BOT_TOKEN`, `TELEGRAM_GROUP_CHAT_ID`, `TELEGRAM_OWNER_USER_IDS`, `GITHUB_TOKEN`, `GITHUB_OWNER`, `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`, `SQLITE_PATH` (placeholders only; no real secrets)
 - [.gitignore](../.gitignore) — already ignores `.env`, `*.sqlite*`, `debug/`; keep that
 - [tests/test_config.py](../tests/test_config.py)
 
-**Functionality.** Load config from env + yaml. Refuse to start if required keys missing when a given entrypoint is used. No bot, no DB schema yet.
+**Functionality.** Load config from env + yaml. Refuse to start if required keys missing when a given entrypoint is used. No bot, no DB schema yet. Tests never read the real `.env`.
 
 **Verification.**
 
@@ -130,7 +149,7 @@ python -c "import tg_triage; print(tg_triage.__file__)"
 pytest tests/test_config.py -q
 ```
 
-Use a temp env in the test (do not read the real `.env`). Assert default `LLM_MODEL` is `openai/gpt-oss-20b:free` and default `LLM_BASE_URL` is `https://openrouter.ai/api/v1`. Assert `config/demo.yaml` parses to three `RepositoryId` values.
+Use a temp env in the test. Assert default `LLM_MODEL` is `openai/gpt-oss-20b:free` and default `LLM_BASE_URL` is `https://openrouter.ai/api/v1`. Assert `config/demo.yaml` parses to three `RepositoryId` values (`acme/sales-dashboard`, `acme/crm`, `acme/customer-portal`).
 
 **Expected.** Package imports; config tests pass; no network.
 
@@ -190,9 +209,9 @@ Cases: insert Problem; duplicate message id is idempotent (same row); date+lifec
 
 **Verification.** `pytest tests/unit/test_intake.py -q`
 
-Sample input: `"The sales dashboard export doesn't work anymore.\nIt just keeps loading."` plus ids. Assert `original_text` exact match; `lifecycle == ingested`; linked_issue is None; duplicate message id → one row.
+Sample input: `"Экспорт дашборда продаж больше не работает.\nКрутится загрузка."` plus ids. Assert `original_text` exact match; `lifecycle == ingested`; linked_issue is None; duplicate message id → one row.
 
-**Expected.** Unit tests pass with fake repo (SQLite optional extra case may reuse Step 3).
+**Expected.** Unit tests pass with fake repo (SQLite optional extra case may reuse [Step 3](#step-3--persistence-ports-and-sqlite)).
 
 **Done.** Intake is deterministic, idempotent, and has no Telegram import.
 
@@ -200,14 +219,14 @@ Sample input: `"The sales dashboard export doesn't work anymore.\nIt just keeps 
 
 ### Step 5 — Markdown contract (render + parse)
 
-**Purpose.** One schema both ways. Section heading **is** the action. `## Legend` skipped. Frozen example from architecture §4 is the golden file.
+**Purpose.** One schema both ways. Section heading **is** the action. `## Legend` skipped. Frozen example from [MVP Architecture, Markdown Contract](mvp_architecture.md#markdown-contract-renderer--parser) is the **syntax** golden file (field names and that example’s wording stay as locked there).
 
 **Create:**
 
 - [src/tg_triage/markdown/renderer.py](../src/tg_triage/markdown/renderer.py)
 - [src/tg_triage/markdown/parser.py](../src/tg_triage/markdown/parser.py)
 - [src/tg_triage/markdown/validate_plan.py](../src/tg_triage/markdown/validate_plan.py)
-- [tests/golden/contract_example.md](../tests/golden/contract_example.md) — copy the architecture example (run 7, three sections)
+- [tests/golden/contract_example.md](../tests/golden/contract_example.md) — copy the architecture frozen example (run 7, three sections)
 - [tests/unit/test_markdown.py](../tests/unit/test_markdown.py)
 
 **Functionality.**
@@ -228,7 +247,7 @@ Cases:
 5. Skip without `Existing` → error
 6. Owner moves the uncertain `###` into `## Create` with a valid repo and Body → parse succeeds as create
 
-**Expected.** Golden parse matches architecture example; round-trip stable; invalid files fail closed.
+**Expected.** Golden parse matches [MVP Architecture, Markdown Contract](mvp_architecture.md#markdown-contract-renderer--parser); round-trip stable; invalid files fail closed.
 
 **Done.** Renderer is canonical (LLM does not write this file). Parser is the only execute input path.
 
@@ -255,7 +274,7 @@ Cases:
 
 **Verification.** `pytest tests/unit/test_execute.py -q`
 
-Use golden markdown + FakeIssueTracker that records calls. Assert: preview call count 0; after confirm, one `create` with title `Sales dashboard export hangs` and body containing the two-user summary; skip item → 0 extra creates; problems 101/102/104 `linked`; 103 still `ingested`; second execute → still one create total; invalid markdown → no creates.
+Use the architecture golden markdown ([Step 5](#step-5--markdown-contract-render--parse)) + FakeIssueTracker that records calls. Assert: preview call count 0; after confirm, one `create` with title `Sales dashboard export hangs` and body containing the two-user summary; skip item → 0 extra creates; problems 101/102/104 `linked`; 103 still `ingested`; second execute → still one create total; invalid markdown → no creates.
 
 **Expected.** Fake tracker is the only “GitHub”; tests pass offline.
 
@@ -265,22 +284,28 @@ Use golden markdown + FakeIssueTracker that records calls. Assert: preview call 
 
 ### Step 7 — Fixture knowledge source
 
-**Purpose.** `/compile` reads files only. Missing fixtures fail the run.
+**Purpose.** `/compile` reads files only. Missing fixtures fail the run. Fixtures are **invented** demo snapshots, not dumps of real GitHub projects.
 
 **Create:**
 
 - Port: [src/tg_triage/ports/knowledge.py](../src/tg_triage/ports/knowledge.py)
 - [src/tg_triage/infrastructure/fixtures.py](../src/tg_triage/infrastructure/fixtures.py)
-- Sample test fixtures: `tests/fixtures/github/acme/sales-dashboard/{meta.json, README.md, issues.json}` (and crm, customer-portal)
+- Sample test fixtures (Russian prose): `tests/fixtures/github/acme/sales-dashboard/{meta.json, README.md, issues.json}` (and `crm`, `customer-portal`)
 - [tests/unit/test_fixture_source.py](../tests/unit/test_fixture_source.py)
 
-Layout matches architecture: `fixtures/github/<owner>/<repo>/`. `issues.json` = newest-open-not-PR list with number, title, truncated body.
+Layout matches [MVP Architecture, Key architectural decisions](mvp_architecture.md#12-key-architectural-decisions): `fixtures/github/<owner>/<repo>/`. `issues.json` = newest-open-not-PR list with number, title, truncated body.
+
+Minimum Russian fixture content (eligible user text):
+
+- `sales-dashboard` `meta.json` description: дашборд продаж, воронка, выгрузка CSV. README: как выгрузить отчёт. One issue titled like «Экспорт дашборда продаж не завершается» (spinner / вечная загрузка).
+- `crm` README: карточки клиентов, задания синхронизации. No issue that uniquely claims «синхронизация клиентов задерживается».
+- `customer-portal` README: клиентский портал, профиль. Same: leave the vague sync report ambiguous between crm and portal.
 
 **Functionality.** `FixtureKnowledgeSource.collect()` → `EvidencePack`. If any configured repo directory or file is missing → raise a typed error (compile will fail the run). Do not call GitHub.
 
 **Verification.** `pytest tests/unit/test_fixture_source.py -q`
 
-Cases: three repos load; pack contains a seeded export issue for sales-dashboard; delete `issues.json` → collect fails; configured repo with no directory → fail.
+Cases: three repos load; pack contains the Russian export issue for sales-dashboard; delete `issues.json` → collect fails; configured repo with no directory → fail.
 
 **Expected.** Pass with only disk files.
 
@@ -295,7 +320,7 @@ Cases: three repos load; pack contains a seeded export issue for sales-dashboard
 **Create:**
 
 - [src/tg_triage/ports/llm.py](../src/tg_triage/ports/llm.py)
-- Prompts + JSON schemas as listed in §1
+- Prompts + JSON schemas as listed in [Implementation strategy, LLM integration](#llm-integration-initial-implementation--locked-here)
 - [src/tg_triage/llm/validate.py](../src/tg_triage/llm/validate.py) — schema, coverage, identity checks
 - [src/tg_triage/llm/http_client.py](../src/tg_triage/llm/http_client.py) — OpenAI-compatible `chat.completions`; `response_format` JSON if the provider accepts it; temperature 0
 - [src/tg_triage/llm/debug_writer.py](../src/tg_triage/llm/debug_writer.py) — best-effort write; swallow IO errors
@@ -330,11 +355,11 @@ Cases: valid cluster partition; missing problem id fails; invented `acme/secret`
 - Write debug JSON best-effort
 - `/compile` query: `created_at >= since_date` AND `lifecycle=ingested`
 
-Canned scenario (must match later demo texts): problems 101+102 cluster to export item (`create_new`, `acme/sales-dashboard`); 104 → `link_existing` seeded issue; 103 → `uncertain`.
+Canned scenario (must match later demo texts in [Two concrete real end-to-end demo scenarios](#7-two-concrete-real-end-to-end-demo-scenarios)): problems 101+102 cluster to the export item (`create_new`, `acme/sales-dashboard`); 104 → `link_existing` seeded issue; 103 → `uncertain`. Problem texts in the canned payload are Russian.
 
 **Verification.** `pytest tests/integration/test_compile.py -q`
 
-Assert: FakeLlm call count 2 (cluster, match); generated markdown parses to those three outcomes; coverage of {101,102,103,104}; debug writer invoked; empty period → 0 LLM calls; bad cluster JSON then good → 3 LLM calls (retry+match) or 4 if match also retries — pin the exact count in the test; invented repo in canned match → failed run, no document payload.
+Assert: FakeLlm call count 2 (cluster, match); generated markdown parses to those three outcomes; coverage of {101,102,103,104}; debug writer invoked; empty period → 0 LLM calls; bad cluster JSON then good → pin the exact LLM call count in the test (retry + match); invented repo in canned match → failed run, no document payload.
 
 **Expected.** Integration tests use temp SQLite + test fixtures + FakeLlm only.
 
@@ -372,18 +397,18 @@ Sequence: compile with canned LLM → store **edited** markdown that changes Pri
 
 **Create:** [tests/e2e/test_fake_workflow.py](../tests/e2e/test_fake_workflow.py)
 
-**Functionality.** None new; wires Steps 4–10.
+**Functionality.** None new; wires [Step 4](#step-4--problem-intake-use-case) through [Step 10](#step-10--application-orchestrator-run-state-machine).
 
 **Verification.** `pytest tests/e2e/test_fake_workflow.py -q`
 
 Scripted events:
 
-1. Three `ingest_group_text` calls (two export variants + one vague “sync is delayed”)
+1. Four `ingest_group_text` calls with Russian texts from [Scenario A](#scenario-a--cluster--create--uncertain-human-resolves-one) plus one skip-match report
 2. `compile(since=that day)`
-3. Assert markdown has `## Create`, `## Uncertain`, and either Skip or Create depending on canned match (include a fourth ingest matching seeded issue for Skip)
+3. Assert markdown has `## Create`, `## Uncertain`, and `## Skip` (canned match)
 4. Mutate markdown string in memory (owner edit): set uncertain Repo to `acme/crm`, Body, move block to `## Create`
 5. `store_upload` → `confirm`
-6. Assert FakeIssueTracker created two issues (export + crm); skip recorded; all four problems `linked` except if one excluded
+6. Assert FakeIssueTracker created two issues (export + crm); skip recorded; problems on create/skip `linked`; excluded/uncertain-if-left stay `ingested` as designed
 
 **Expected.** Green on a laptop with no tokens.
 
@@ -391,62 +416,68 @@ Scripted events:
 
 ---
 
-### Step 12 — GitHub adapters (mocked HTTP) + seed/refresh scripts
+### Step 12 — GitHub adapters (mocked HTTP) + seed / refresh / drop scripts
 
-**Purpose.** Thin GitHub clients **outside** the domain. Seed writes demo repos from versioned definitions; refresh writes `fixtures/github/...`; execute create uses Issues API (title+body only).
+**Purpose.** Thin GitHub clients **outside** the domain. Three operator entry points over **fake** demo repos only:
+
+- **seed** — create the configured made-up repos and populate them from versioned seed files (create-once)
+- **refresh** — read those repos → write `fixtures/github/...`
+- **drop** — delete those same seeded repos after an explicit confirmation that lists every `owner/repo`
 
 **Create:**
 
-- [src/tg_triage/infrastructure/github/client.py](../src/tg_triage/infrastructure/github/client.py) — REST: create repo (if missing), set description, put README, create issues, list open issues, get repo
+- [src/tg_triage/infrastructure/github/client.py](../src/tg_triage/infrastructure/github/client.py) — REST: create repo, set description, put README, create issues, list open issues, get repo, delete repo
 - [src/tg_triage/infrastructure/github/issue_tracker.py](../src/tg_triage/infrastructure/github/issue_tracker.py) — implements `IssueTracker`
 - [src/tg_triage/operator/seed.py](../src/tg_triage/operator/seed.py)
 - [src/tg_triage/operator/refresh.py](../src/tg_triage/operator/refresh.py)
-- Seed tree: [seed/github/acme/sales-dashboard/](../seed/github/acme/) (and crm, customer-portal) — `meta.json`, `README.md`, `issues.yaml` or json (export-hangs issue; login timeout; nothing that makes “sync delayed” unambiguous)
-- CLI entry points in `pyproject.toml`: `tg-triage-seed`, `tg-triage-refresh`
+- [src/tg_triage/operator/drop.py](../src/tg_triage/operator/drop.py)
+- Seed tree (invented content only): [seed/github/acme/sales-dashboard/](../seed/github/acme/) (and `crm`, `customer-portal`) — `meta.json`, `README.md`, issues file. Prose in Russian (see [Step 7](#step-7--fixture-knowledge-source)). Do not copy README/issues from any real GitHub project.
+- CLI entry points in `pyproject.toml`: `tg-triage-seed`, `tg-triage-refresh`, `tg-triage-drop`
 - [tests/unit/test_github_adapters.py](../tests/unit/test_github_adapters.py)
 
-**Functionality.** Seed must **not** write fixture files. Refresh must **not** create issues. Create adapter maps GitHub `{number, html_url}` → `IssueRef` + URL. Shared client; two scripts.
+**Functionality.**
 
-Seed content (demo-critical):
-
-- `sales-dashboard` README mentions export/CSV; one open issue titled like “Sales dashboard export never finishes”
-- `crm` README: customer records, sync jobs
-- `customer-portal` README: customer-facing portal, profile sync — so a vague “customer synchronization is delayed” is legitimately uncertain
+- Seed must **not** write fixture files. Refresh must **not** create or delete issues/repos. Drop must **not** seed or refresh.
+- Create adapter maps GitHub `{number, html_url}` → `IssueRef` + URL. Shared client; three scripts.
+- **Create-once seed:** if `owner/repo` already exists, **skip it**, print a clear message (`Skipping acme/sales-dashboard: repository already exists. Run tg-triage-drop, then seed, to recreate.`). Do not update, retitle, or add duplicate seed issues.
+- **Drop confirmation:** print the exact list of `owner/repo` that will be deleted (the configured demo list only — never an arbitrary GitHub repo). Wait for interactive confirmation that includes that list (operator must type `yes` after seeing the names, or type the repo names back). No default `--yes` that skips showing the list. Abort with no API deletes if confirmation does not match.
+- Seed content (demo-critical, Russian): as in [Step 7](#step-7--fixture-knowledge-source). Vague «синхронизация клиентов» must remain ambiguous between `crm` and `customer-portal`.
 
 **Verification.** `pytest tests/unit/test_github_adapters.py -q` with mocked httpx.
 
-Cases: create issue POST `/repos/{owner}/{repo}/issues` JSON `{title, body}` only (no `labels`); refresh writes truncated issues.json (K=10, body 1000 chars) to a temp dir; seed emits create-repo + create-issue calls from seed files; refresh after mock list does not POST issues.
+Cases: create issue POST `/repos/{owner}/{repo}/issues` JSON `{title, body}` only (no `labels`); refresh writes truncated issues.json (K=10, body 1000 chars) to a temp dir; seed emits create-repo + create-issue from seed files; second seed against “already exists” mock → 0 create-issue POSTs and a skip message; refresh after mock list does not POST issues; drop without matching confirmation → 0 DELETE calls; drop after confirmation → DELETE only the listed fake repos.
 
-**Expected.** No live GitHub. Domain still has no `api.github.com` strings (`grep` `src/tg_triage/domain` and `src/tg_triage/application`).
+**Expected.** No live GitHub. Domain still has no `api.github.com` strings (`grep` `src/tg_triage/domain` and `src/tg_triage/application`). Seed files are not copies of real repositories.
 
-**Done.** Three GitHub capabilities remain three entry points. Checked-in **test** fixtures stay; production `fixtures/github/` may be populated in Step 13.
+**Done.** Three operator GitHub capabilities remain three entry points. Checked-in **test** fixtures stay; production `fixtures/github/` may be populated in [Step 13](#step-13--live-github-smoke-operator).
 
 ---
 
 ### Step 13 — Live GitHub smoke (operator)
 
-**Purpose.** Prove seed, refresh, and create against real GitHub. Not CI.
+**Purpose.** Prove seed, refresh, and create against real GitHub using **new fake repos** under `GITHUB_OWNER`. Not CI. Requires secrets — see [Open questions](#8-open-questions).
 
-**Modify:** none required if Step 12 is complete. Operator uses `.env` (`GITHUB_TOKEN`, `GITHUB_OWNER`). Replace `acme` in config with the real owner.
+**Modify:** none required if [Step 12](#step-12--github-adapters-mocked-http--seed--refresh--drop-scripts) is complete. Operator fills `.env`: `GITHUB_TOKEN`, `GITHUB_OWNER`. Live config uses `{GITHUB_OWNER}/sales-dashboard` (etc.), not `acme` and not any pre-existing project.
 
-**Functionality.** Same scripts, live network.
+**Functionality.** Same scripts, live network. Drop is **not** required for this smoke (destructive). Optional: after smoke, operator may `tg-triage-drop` (with confirmation) to clean up.
 
-**Verification** (manual commands; coding agent must not invent tokens):
+**Verification** (manual; coding agent must not invent tokens). Skip unless `GITHUB_TOKEN` and `GITHUB_OWNER` are set. Prefer `tests/smoke/test_github_live.py` marked `@pytest.mark.smoke` skipped unless `RUN_GITHUB_SMOKE=1`.
 
 ```text
+# .env must contain GITHUB_TOKEN (repo create/delete scope) and GITHUB_OWNER
+tg-triage-seed
+# second run must print skip messages, not duplicate issues
 tg-triage-seed
 tg-triage-refresh
-# assert fixtures/github/<owner>/sales-dashboard/issues.json contains the export issue
-# then a one-off pytest or CLI:
-# create one throwaway issue via IssueTracker.create on a demo repo
-# assert returned URL opens (or GET that issue number 200)
+# assert fixtures/github/<GITHUB_OWNER>/sales-dashboard/issues.json contains the Russian export issue
+RUN_GITHUB_SMOKE=1 pytest tests/smoke/test_github_live.py -q
 ```
 
-Optional tiny CLI `tg-triage-create-test --repo owner/sales-dashboard` is acceptable if it only exists for smoke; delete or gate behind env `SMOKE=1`. Prefer a `tests/smoke/test_github_live.py` marked `@pytest.mark.smoke` skipped unless `RUN_GITHUB_SMOKE=1`.
+The smoke test creates one throwaway issue via `IssueTracker.create` on a **seeded fake** repo and asserts a real `html_url` (GET 200). It must not target repositories outside the configured demo list.
 
-**Expected.** Repos exist; fixtures on disk; one created issue URL printed. Re-running seed does not blindly duplicate if the script is written to skip existing-named issues — if duplication is possible, document “run seed once; after demo only refresh.”
+**Expected.** Fake repos exist under `GITHUB_OWNER`; fixtures on disk; one created issue URL printed; second seed is a no-op with a skip message.
 
-**Done.** Demo world exists on GitHub. Refresh output is committed or regenerated before compile demos. Live smoke is opt-in, not part of default `pytest`.
+**Done.** Disposable demo world exists on GitHub. Refresh output is regenerated before compile demos. Live smoke is opt-in, not part of default `pytest`.
 
 ---
 
@@ -462,7 +493,7 @@ Optional tiny CLI `tg-triage-create-test --repo owner/sales-dashboard` is accept
 - [src/tg_triage/__main__.py](../src/tg_triage/__main__.py) — `python -m tg_triage` long polling
 - [tests/unit/test_telegram_adapter.py](../tests/unit/test_telegram_adapter.py)
 
-**Functionality (intake rules):**
+**Functionality (intake rules)** — [MVP System Specification, Telegram interaction model](mvp_system_specification.md#7-telegram-interaction-model):
 
 - Only configured `TELEGRAM_GROUP_CHAT_ID` text from users → intake
 - Commands and documents never become Problems (group or DM)
@@ -499,92 +530,106 @@ Feed synthetic `Update`-like payloads (or call handler functions with a fake `Te
 
 ### Step 15 — Live Telegram smoke (operator)
 
-**Purpose.** Prove polling, group intake, DM document round-trip. LLM and GitHub may still be fakes if env `LLM_BASE_URL` points at a local stub, **or** use the real LLM if Step 16 is already done. Minimum: intake + file round-trip.
+**Purpose.** Prove polling, group intake, DM document round-trip. Requires Telegram secrets — see [Open questions](#8-open-questions). LLM and GitHub may still be fakes if env points at stubs, **or** use the real LLM if [Step 16](#step-16--live-llm-compile-smoke-operator) is already done. Minimum: intake + file round-trip.
 
-**Verification** (opt-in `RUN_TELEGRAM_SMOKE=1` or a short operator checklist — not default pytest):
+**Verification** (opt-in `RUN_TELEGRAM_SMOKE=1` or the checklist below — not default pytest). Skip if `TELEGRAM_BOT_TOKEN` is unset.
 
-1. Create bot + group (BotFather); disable Group Privacy / admin; set `.env`
+1. Create bot + group (BotFather); disable Group Privacy / add bot as admin; set `.env` (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_GROUP_CHAT_ID`, `TELEGRAM_OWNER_USER_IDS`)
 2. `python -m tg_triage`
-3. Post one group message `SMOKE export button does nothing`
+3. Post one group message `SMOKE кнопка экспорта ничего не делает`
 4. Query SQLite: that text exists as `ingested` (`python -c` using `SQLITE_PATH`)
 5. Owner DM `/compile <today>` — if LLM is fake/stub, canned path still sends a file; if live LLM, a real file arrives
 6. Download, re-upload the same file, `/execute`, Cancel — no GitHub writes
-7. Confirm path only when GitHub token is intended (can wait for demo)
+7. Confirm path only when GitHub token is intended (can wait for [demo scenarios](#7-two-concrete-real-end-to-end-demo-scenarios))
 
 **Expected.** Problem row; `.md` document received in DM; upload stored; Cancel leaves GitHub untouched.
 
-**Done.** Operator prerequisites documented in a short [operator_setup.md](operator_setup.md) (bot, group privacy, env keys, seed/refresh). No second UI.
+**Done.** Operator prerequisites documented in a short [docs/operator_setup.md](operator_setup.md) (bot, group privacy, env keys, seed/refresh/drop). No second UI. That file is created in this step if it does not exist yet.
 
 ---
 
 ### Step 16 — Live LLM compile smoke (operator)
 
-**Purpose.** Prove gpt-oss-20b (or Ollama fallback) returns valid cluster+match JSON against real fixtures.
+**Purpose.** Prove preferred OpenRouter `gpt-oss-20b:free`, then host Ollama `qwen3:8b` if needed, returns valid cluster+match JSON against **fake** fixtures. Requires LLM config — see [Open questions](#8-open-questions).
 
-**Create:** [tests/smoke/test_llm_live.py](../tests/smoke/test_llm_live.py) skipped unless `RUN_LLM_SMOKE=1`; uses real `HttpLlmJudgment` + checked-in/refreshed fixtures + 3–4 canned Problem texts; **does not** send Telegram or create GitHub issues.
+**Create:** [tests/smoke/test_llm_live.py](../tests/smoke/test_llm_live.py) skipped unless `RUN_LLM_SMOKE=1`; uses real `HttpLlmJudgment` + checked-in/refreshed fixtures + 3–4 canned **Russian** Problem texts; **does not** send Telegram or create GitHub issues.
 
 **Verification.**
 
 ```text
+# Preferred:
+# LLM_BASE_URL=https://openrouter.ai/api/v1
+# LLM_MODEL=openai/gpt-oss-20b:free
+# LLM_API_KEY=<openrouter key>
 RUN_LLM_SMOKE=1 pytest tests/smoke/test_llm_live.py -q
 ```
 
-Assert: valid partition; every repository is configured or `unknown`; at least one item may be uncertain (do not hard-fail if the model clusters differently — assert **schema + identity validation passed** and markdown renders). Dump debug JSON under `debug/triage-runs/smoke/`. If OpenRouter fails, rerun with Ollama env.
+If OpenRouter fails, rerun with host Ollama: `LLM_BASE_URL=http://localhost:11434/v1`, `LLM_MODEL=qwen3:8b`.
+
+Assert: valid partition; every repository is configured or `unknown`; do not hard-fail if the model clusters differently — assert **schema + identity validation passed** and markdown renders. Dump debug JSON under `debug/triage-runs/smoke/`.
 
 **Expected.** One successful compile artifact. If JSON invalid, retry-once behavior is visible in debug files.
 
-**Done.** Default model is acceptable for the demo, or fallback is documented. No change to prompts to “make it always create” — uncertainty is success.
+**Done.** Preferred model is acceptable for the demo, or Ollama fallback is confirmed on the host. No change to prompts to “make it always create” — uncertainty is success.
 
 ---
 
 ### Step 17 — Demo dry-run (fake, then real)
 
-**Purpose.** Rehearse the two demo scenarios below. First entirely on fakes (CI), then once on live Telegram+LLM+GitHub.
+**Purpose.** Rehearse the two demo scenarios in [Two concrete real end-to-end demo scenarios](#7-two-concrete-real-end-to-end-demo-scenarios). First entirely on fakes (CI), then once on live Telegram+LLM+GitHub.
 
-**Create:** [demo_script.md](demo_script.md) with exact messages, since-date, expected sections, and owner edits. Do not use [demo_repos.txt](demo_repos.txt) (stale GitLab URL).
+**Create:** [docs/demo_script.md](demo_script.md) — copy the tables from that section (exact Russian messages, since-date, owner edits).
 
 **Verification.**
 
 - Fake: extend or reuse `tests/e2e/test_fake_workflow.py` so both demo scenarios are encoded as tests
-- Real: operator checklist in §6–7
+- Real: walk the tables in [Two concrete real end-to-end demo scenarios](#7-two-concrete-real-end-to-end-demo-scenarios); acceptance items in [Verification gates, Gate C](#gate-c--demo-day-acceptance)
 
 **Expected.** Fake tests green. Real run produces GitHub issue URLs and one skip record.
 
-**Done.** MVP success criteria in spec §19 are each checked off.
+**Done.** MVP success criteria in [MVP System Specification, MVP success criteria](mvp_system_specification.md#19-mvp-success-criteria) are each checked off.
 
 ---
 
-## 6. Final MVP verification checklist
+## 6. Verification gates
 
-Default `pytest` (no extra env) is green: unit, integration, fake e2e.
+**Purpose.** Three different people/roles prove three different things. This is not a second test suite and not a substitute for per-step verification. Use it only as a **gate**: do not call the MVP done until the matching gate is green.
 
-Offline / fake:
+| Gate | Who verifies | When | How | Expected if pass |
+|---|---|---|---|---|
+| A. Offline CI | Coding agent (default `pytest`, no extra env) | After [Steps 1–12](#step-1--project-skeleton-and-configuration) and [Step 14](#step-14--telegram-adapter-offline--bot-wiring); always before merging | `pytest -q` | Exit code 0. No live Telegram/GitHub/LLM. Proves the workflow with fakes. |
+| B. Live smoke | Operator who owns the tokens | [Step 13](#step-13--live-github-smoke-operator) GitHub; [Step 15](#step-15--live-telegram-smoke-operator) Telegram; [Step 16](#step-16--live-llm-compile-smoke-operator) LLM | Opt-in env flags + scripts in those steps | Each smoke’s **Expected** line in that step. Failures stay in that external system, not in Gate A. |
+| C. Demo-day | Presenter + stakeholder | [Step 17](#step-17--demo-dry-run-fake-then-real) using [demo scenarios](#7-two-concrete-real-end-to-end-demo-scenarios) | Walk Scenario A then B live | [MVP System Specification, MVP success criteria](mvp_system_specification.md#19-mvp-success-criteria): human-approved Markdown, creates + skip, at least one Uncertain, LLM did not create issues itself. |
 
-- Group-like text persists as `Problem`; commands/documents would not (adapter tests)
+**Gate A — what default pytest must prove** (coding agent checks this list only as “all corresponding tests exist and pass”, not as extra manual work):
+
+- Group-like text persists as `Problem`; commands/documents do not (adapter tests)
 - Duplicate `(chat_id, message_id)` does not duplicate rows
-- `/compile` analogue loads only `ingested` rows in period
+- Compile analogue loads only `ingested` rows in period
 - Missing fixtures fail compile with 0 LLM calls
 - Canned LLM: cluster coverage; invented repo fails; uncertain allowed
 - Golden markdown parse/render; unknown `##` fails whole plan
 - Preview does not create issues; Confirm creates; Skip does not write; Uncertain leaves `ingested`
 - Retry execute does not duplicate creates
 - New compile supersedes pending/awaiting; execute uses upload not generated file
+- Seed create-once skips existing fake repos; drop without confirmation deletes nothing
 - `grep` domain+application: no GitHub REST paths, no Telegram `Update`
 
-Opt-in live:
+**Gate B — live, opt-in only** (operator; skipped in CI):
 
-- `tg-triage-seed` + `tg-triage-refresh` produce fixture files matching configured repos
+- `tg-triage-seed` + `tg-triage-refresh` produce fixture files for the **configured fake** repos under `GITHUB_OWNER`
+- Second `tg-triage-seed` prints skip messages and does not duplicate issues
 - GitHub create smoke returns a real `html_url`
 - Telegram: one group message → SQLite row; owner receives `triage-run-<id>.md`; upload + `/execute` + Cancel is safe
-- Live LLM compile produces a schema-valid contract against fixtures
+- Live LLM compile produces a schema-valid contract against fixtures (OpenRouter first, Ollama on the host if needed)
 
-Demo (spec §19):
+**Gate C — demo acceptance** (maps 1:1 to [MVP System Specification, MVP success criteria](mvp_system_specification.md#19-mvp-success-criteria)):
 
-- Several free-form group reports
+- Several free-form group reports (Russian)
 - Problems in SQLite
 - Owner `/compile` in DM
-- Output shows: clustered reports, a skip-able existing issue, a likely repo, a priority, at least one **Uncertain**
-- Owner edits file (resolve or leave uncertain; create vs skip)
+- Output shows clustered reports, a skip-able existing issue, a likely repo, a priority, at least one **Uncertain**
+- Owner edits the file (resolve or leave uncertain; create vs skip)
 - Upload + `/execute` + Confirm
 - Issues created; skips recorded with refs/URLs
 - LLM did not create issues by itself
@@ -593,59 +638,92 @@ Demo (spec §19):
 
 ## 7. Two concrete real end-to-end demo scenarios
 
-Assume configured repos `{GITHUB_OWNER}/sales-dashboard`, `.../crm`, `.../customer-portal`, fixtures refreshed after seed (export issue exists on sales-dashboard, e.g. `#N`). Owner allowlisted. Bot polling. Use today’s date as `SINCE`.
+**Shared setup (before either scenario)**
+
+| Step | What to do | Who | Expected |
+|---|---|---|---|
+| 0.1 | Fill `.env`: `GITHUB_TOKEN`, `GITHUB_OWNER`, Telegram keys, LLM keys as in [Open questions](#8-open-questions) | Operator | Process can authenticate; no secrets in git |
+| 0.2 | `tg-triage-seed` then `tg-triage-refresh` | Operator | Three **new fake** repos exist under `GITHUB_OWNER`; `fixtures/github/<owner>/sales-dashboard/issues.json` contains the Russian export issue (number `#N`) |
+| 0.3 | `python -m tg_triage` | Operator | Bot is polling |
+| 0.4 | Use today’s date as `SINCE` (`YYYY-MM-DD`) | List Owner | `/compile` will include the messages posted in this session |
+
+Repos in play (made-up names only): `{GITHUB_OWNER}/sales-dashboard`, `{GITHUB_OWNER}/crm`, `{GITHUB_OWNER}/customer-portal`.
 
 ### Scenario A — Cluster + create + uncertain (human resolves one)
 
-**Setup.** Seed+refresh done. No extra live issues required beyond seed.
+Goal: two similar export reports become one Create; a vague sync report is Uncertain; owner resolves Uncertain to Create on `crm`.
 
-**Reporter group messages (free-form, minutes apart):**
-
-1. `The sales dashboard export doesn't work anymore. It just keeps loading.`
-2. `Export on the sales dashboard is stuck on a spinner. Need this for the weekly report.`
-3. `Customer synchronization is delayed.`
-
-**Owner DM:** `/compile SINCE`
-
-**Expect in the `.md`:** one `## Create` (or Skip if the model matches the seeded export issue — if Skip, owner **moves** that `###` to `## Create` only if the seeded issue is judged different; for this scenario prefer showing clustering: two problem ids on one item). One `## Uncertain` for message 3 (`Repo: unknown`). Priority may be P1 on export. Legend present.
-
-**Owner edit (outside Telegram):** keep clustered export as Create on `sales-dashboard`; move uncertain block to `## Create`, set `Repo: {GITHUB_OWNER}/crm`, add a Body. Save.
-
-**Upload** the file in DM. `/execute` → Confirm.
-
-**Expect:** two GitHub issues (export, crm sync); SQLite: three Problems `linked`; Uncertain did not remain unexecuted; bot replies with two URLs. Seeded export issue is **not** commented on.
+| Step | What to do | Who | Expected |
+|---|---|---|---|
+| A1 | In the reporter **group**, send: `Экспорт дашборда продаж больше не работает. Крутится загрузка.` | Reporter | New `Problem`, `lifecycle=ingested`, original text preserved |
+| A2 | In the group, send: `На дашборде продаж экспорт зависает на спиннере. Нужен отчёт к планерке.` | Reporter | Second ingested Problem (different message id) |
+| A3 | In the group, send: `Синхронизация клиентов задерживается.` | Reporter | Third ingested Problem |
+| A4 | In a **DM** with the bot: `/compile SINCE` | List Owner | Bot sends unparsed `triage-run-<id>.md`. File has `## Legend`. Export reports share one `###` item under `## Create` (two Problem ids) **or** under `## Skip` if the model matched seed issue `#N` — if Skip, owner keeps the demo’s Create story by moving that block to `## Create` only when they judge it a new issue; prefer showing **clustering** (two ids, one item). Message A3 is under `## Uncertain` (`Repo: unknown`). Priority may be P1 on export. |
+| A5 | Download the `.md`, edit outside Telegram: keep clustered export as Create on `sales-dashboard`; move the Uncertain `###` into `## Create`; set `Repo: {GITHUB_OWNER}/crm`; add a `Body`. Save. | List Owner | Edited file is the authority; generated file is stale |
+| A6 | Upload the edited `.md` in the same DM | List Owner | Run status `awaiting_execute`; bot stored bytes |
+| A7 | `/execute` then tap **Confirm** (not Cancel) | List Owner | Two GitHub issues created (export + crm). Bot replies with two URLs. Seeded export issue is **not** commented on. SQLite: three Problems `linked`. |
 
 ### Scenario B — Skip existing + leave uncertain
 
-**Setup.** Scenario A already created the export issue, **or** rely on the seeded “export never finishes” issue. **Refresh fixtures** so the snapshot contains the issue to match. Ingest **new** problems only (`linked` ones must not reappear).
+Goal: a later export report Skip-matches an existing issue; a vague portal-vs-CRM report stays Uncertain and is **not** executed.
 
-**Reporter group:**
+| Step | What to do | Who | Expected |
+|---|---|---|---|
+| B0 | After Scenario A (or using seed issue `#N`), run `tg-triage-refresh` | Operator | Snapshot contains the export issue to match. Already-`linked` Problems will not re-enter compile |
+| B1 | In the group, send: `CSV-экспорт дашборда всё ещё висит — как раньше.` | Reporter | New ingested Problem (not the A1–A3 rows) |
+| B2 | In the group, send: `Что-то не так с клиентами, не понятно: портал или CRM.` | Reporter | New ingested Problem |
+| B3 | DM: `/compile SINCE` | List Owner | Item B1 → `## Skip` with `Existing: {GITHUB_OWNER}/sales-dashboard#N`. Item B2 → `## Uncertain` |
+| B4 | Edit: **leave** Uncertain in `## Uncertain`. Keep Skip. Save and upload in DM | List Owner | Upload stored; Uncertain still not a Create |
+| B5 | `/execute` then **Confirm** | List Owner | **Zero** new GitHub creates. Skip recorded with `#N`. Problem B1 `linked` to that `IssueRef`. Problem B2 still `ingested`. Bot lists Skipped; no new URL for B2. A later `/compile` can pick up B2 again |
 
-1. `Dashboard CSV export still hangs forever — same as before.`
-2. `Something is wrong with customers but not sure if it's the portal or CRM.`
-
-**Owner:** `/compile SINCE`
-
-**Expect:** item 1 → `## Skip` with `Existing: owner/sales-dashboard#N`; item 2 → `## Uncertain`.
-
-**Owner edit:** leave Uncertain in place (do not create). Keep Skip. Upload. `/execute` Confirm.
-
-**Expect:** **zero** new GitHub creates (Fake or live tracker create count 0); Skip recorded with `#N`; problem 1 `linked` to that `IssueRef`; problem 2 still `ingested`; bot lists Skipped and does not list a new URL for item 2. A later `/compile` can pick up problem 2 again.
-
-These two scenarios together show clustering, matching, uncertainty, Markdown authority, confirm gate, create, skip-without-mutate, and lifecycle.
+Together the tables show clustering, matching, uncertainty, Markdown authority, confirm gate, create, skip-without-mutate, and lifecycle.
 
 ---
 
 ## 8. Open questions
 
-None that block coding. Architecture remaining questions are closed. Telegram library is locked here to `python-telegram-bot`.
+No product/architecture forks remain ([MVP Architecture, Remaining architectural questions](mvp_architecture.md#13-remaining-architectural-questions)). What follows is **operator configuration**: when it is required, where it is set, and how live smoke runs. Steps 1–12 and 14 stay fully testable without these values.
 
-Operator-supplied at smoke/demo time (not design forks):
+### GitHub owner and token
 
-- Real `GITHUB_OWNER` / org that the token can create repos in
-- BotFather token, group chat id, owner user ids
-- Whether the demo machine uses OpenRouter or Ollama fallback that day
+**When required:** [Step 13](#step-13--live-github-smoke-operator) (live seed/refresh/create smoke), [Step 17](#step-17--demo-dry-run-fake-then-real) / [demo scenarios](#7-two-concrete-real-end-to-end-demo-scenarios). Optional for [Step 15](#step-15--live-telegram-smoke-operator) Confirm path. **Not** required for default `pytest`.
 
-If seed should **update** existing GitHub issues vs create-once: prefer create-once (skip seed if repo exists and already has the named seed issues) so Step 13 re-runs are safe. That is an implementation detail for the seed script, not a product change.
+**Where to configure:**
 
-Do not revive [demo_repos.txt](demo_repos.txt) GitLab URL for this MVP.
+- `.env` (gitignored): `GITHUB_TOKEN`, `GITHUB_OWNER`
+- Template: [.env.example](../.env.example)
+- Repo list: [config/demo.yaml](../config/demo.yaml) — live run substitutes `GITHUB_OWNER` for the fictional `acme` prefix. Names stay `sales-dashboard`, `crm`, `customer-portal` (created empty, then seeded). Never point this list at an unrelated existing GitHub project.
+
+**Token:** a GitHub personal access token (or GitHub App token) with permission to **create, write, and delete** repositories under `GITHUB_OWNER`, and to create issues on those repos. Put it only in `.env` as `GITHUB_TOKEN`. The HTTP client sends `Authorization: Bearer <token>`. Coding agents must not invent or commit a token.
+
+**How live smoke runs:** operator exports/sets `.env`, then `RUN_GITHUB_SMOKE=1 pytest tests/smoke/test_github_live.py -q` and/or `tg-triage-seed` + `tg-triage-refresh` as in [Step 13](#step-13--live-github-smoke-operator). If `GITHUB_TOKEN` is missing, smoke tests **skip** (do not fail Gate A).
+
+### Telegram bot token, group chat id, owner user ids
+
+**When required:** [Step 15](#step-15--live-telegram-smoke-operator), [Step 17](#step-17--demo-dry-run-fake-then-real) / demo scenarios. **Not** required for default `pytest` or [Step 14](#step-14--telegram-adapter-offline--bot-wiring) unit tests.
+
+**Where to configure:** `.env`
+
+- `TELEGRAM_BOT_TOKEN` — from [@BotFather](https://t.me/BotFather)
+- `TELEGRAM_GROUP_CHAT_ID` — numeric id of the pre-created reporter group (the app does not create the group)
+- `TELEGRAM_OWNER_USER_IDS` — comma-separated numeric Telegram user ids allowed to `/compile`, upload, `/execute`, Confirm
+
+Document the BotFather + Group Privacy operator steps in [docs/operator_setup.md](operator_setup.md) ([Step 15](#step-15--live-telegram-smoke-operator)).
+
+**How live smoke runs:** operator starts `python -m tg_triage` (library reads `TELEGRAM_BOT_TOKEN`). Follow the [Step 15](#step-15--live-telegram-smoke-operator) checklist. If the token is unset, do not start the bot; unit tests still pass.
+
+### LLM: OpenRouter first, then host Ollama
+
+**When required:** [Step 16](#step-16--live-llm-compile-smoke-operator), and the real compile in [demo scenarios](#7-two-concrete-real-end-to-end-demo-scenarios). **Not** required for FakeLlm tests.
+
+**Where to configure:** `.env` — `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`. Defaults in config: OpenRouter base URL + `openai/gpt-oss-20b:free`.
+
+**Preferred path:** OpenRouter `openai/gpt-oss-20b:free` with `LLM_API_KEY` = OpenRouter key.
+
+**Fallback:** same host machine runs Ollama `qwen3:8b`. Operator changes env to `LLM_BASE_URL=http://localhost:11434/v1`, `LLM_MODEL=qwen3:8b` (API key unused). No in-process model router.
+
+**How live smoke runs:** `RUN_LLM_SMOKE=1 pytest tests/smoke/test_llm_live.py -q` with the preferred env; on failure, switch to Ollama env and rerun. Missing key → skip, not Gate A failure.
+
+### Seed create-once and drop
+
+**Decision (locked):** seed is **create-once**. If the fake `owner/repo` already exists, skip it and print a clear message (do not update issues). To rebuild: `tg-triage-drop` (confirmation that lists every repo) then `tg-triage-seed`. Implemented in [Step 12](#step-12--github-adapters-mocked-http--seed--refresh--drop-scripts); live skip behavior proven in [Step 13](#step-13--live-github-smoke-operator).
