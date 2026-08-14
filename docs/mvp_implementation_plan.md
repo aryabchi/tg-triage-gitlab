@@ -126,16 +126,25 @@ Telegram last: polling and chat IDs do not change domain behavior. GitHub seed b
 
 ### Step 1 — Project skeleton and configuration
 
-**Purpose.** Installable Python 3.13 package, venv, test runner, env-based secrets, closed-world **fake** repo list.
+**Purpose.** Installable Python 3.13 package, venv, test runner, env-based secrets, closed-world **fake** repo list, and a concise root README for local development.
 
 **Create/modify:**
 
+- [README.md](../README.md) — developer-facing, concise (see outline below). Not [docs/operator_setup.md](operator_setup.md) (that is live BotFather/group steps in [Step 15](#step-15--live-telegram-smoke-operator)).
 - [pyproject.toml](../pyproject.toml) — `requires-python = ">=3.13,<3.14"`; deps: `python-telegram-bot`, `httpx`, `pydantic`, `pydantic-settings`; dev: `pytest`, `ruff`
 - [src/tg_triage/__init__.py](../src/tg_triage/__init__.py), [src/tg_triage/config.py](../src/tg_triage/config.py)
 - [config/demo.yaml](../config/demo.yaml) — `repositories: [acme/sales-dashboard, acme/crm, acme/customer-portal]` as the **fictional** closed list used in tests; live overlay replaces `acme` with `GITHUB_OWNER` (see [Open questions](#8-open-questions)). `k: 10`, `readme_max_chars: 2000`, `issue_body_max_chars: 1000`
 - [.env.example](../.env.example) — `TELEGRAM_BOT_TOKEN`, `TELEGRAM_GROUP_CHAT_ID`, `TELEGRAM_OWNER_USER_IDS`, `GITHUB_TOKEN`, `GITHUB_OWNER`, `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`, `SQLITE_PATH` (placeholders only; no real secrets)
 - [.gitignore](../.gitignore) — already ignores `.env`, `*.sqlite*`, `debug/`; keep that
 - [tests/test_config.py](../tests/test_config.py)
+
+**README.md required sections** (keep short; link out rather than duplicate spec):
+
+1. **App name** — `tg-triage` (Python package `tg_triage`).
+2. **App purpose** — one paragraph: ingest free-form Telegram group problems, AI-assisted triage against a GitHub fixture snapshot, owner edits one Markdown contract, then deterministic GitHub issue create or skip. LLM recommends; code executes. Point to [MVP System Specification](mvp_system_specification.md).
+3. **Automation workflow** — the four stages from [MVP System Specification, System boundaries](mvp_system_specification.md#6-system-boundaries): group text → Problem; owner `/compile` → Markdown; owner edit + upload; `/execute` + Confirm → create or skip. Mention operator scripts that will exist after [Step 12](#step-12--github-adapters-mocked-http--seed--refresh--drop-scripts): `tg-triage-seed`, `tg-triage-refresh`, `tg-triage-drop` (fake demo repos only).
+4. **Dependencies** — Python 3.13; runtime: `python-telegram-bot`, `httpx`, `pydantic`, `pydantic-settings`; stdlib `sqlite3`; dev: `pytest`, `ruff`. External systems (not installed as packages): Telegram Bot API, GitHub Issues API, OpenRouter or host Ollama. Live tokens are optional for tests.
+5. **How to setup the dev environment locally** — Windows-friendly commands: `python -m venv .venv`, activate, `pip install -e ".[dev]"`, copy `.env.example` to `.env` (leave secrets blank for default tests), `pytest -q`. Do not require live Telegram/GitHub/LLM for this setup.
 
 **Functionality.** Load config from env + yaml. Refuse to start if required keys missing when a given entrypoint is used. No bot, no DB schema yet. Tests never read the real `.env`.
 
@@ -151,9 +160,11 @@ pytest tests/test_config.py -q
 
 Use a temp env in the test. Assert default `LLM_MODEL` is `openai/gpt-oss-20b:free` and default `LLM_BASE_URL` is `https://openrouter.ai/api/v1`. Assert `config/demo.yaml` parses to three `RepositoryId` values (`acme/sales-dashboard`, `acme/crm`, `acme/customer-portal`).
 
-**Expected.** Package imports; config tests pass; no network.
+README check (no extra test file required): `README.md` exists at repo root and contains headings (or equivalent titled sections) for name, purpose, workflow, dependencies, and local setup. Setup commands in the README match the verification block above.
 
-**Done.** `pip install -e ".[dev]"` works on 3.13; config loads from env+yaml; secrets are not hardcoded; `.env.example` lists every key.
+**Expected.** Package imports; config tests pass; no network; README is usable as the local onboarding page.
+
+**Done.** `pip install -e ".[dev]"` works on 3.13; config loads from env+yaml; secrets are not hardcoded; `.env.example` lists every key; [README.md](../README.md) has the five sections above.
 
 ---
 
@@ -433,6 +444,7 @@ Scripted events:
 - [src/tg_triage/operator/drop.py](../src/tg_triage/operator/drop.py)
 - Seed tree (invented content only): [seed/github/acme/sales-dashboard/](../seed/github/acme/) (and `crm`, `customer-portal`) — `meta.json`, `README.md`, issues file. Prose in Russian (see [Step 7](#step-7--fixture-knowledge-source)). Do not copy README/issues from any real GitHub project.
 - CLI entry points in `pyproject.toml`: `tg-triage-seed`, `tg-triage-refresh`, `tg-triage-drop`
+- [README.md](../README.md) — confirm the workflow section names those three commands (written in [Step 1](#step-1--project-skeleton-and-configuration); adjust if the entry-point names differ)
 - [tests/unit/test_github_adapters.py](../tests/unit/test_github_adapters.py)
 
 **Functionality.**
@@ -449,7 +461,7 @@ Cases: create issue POST `/repos/{owner}/{repo}/issues` JSON `{title, body}` onl
 
 **Expected.** No live GitHub. Domain still has no `api.github.com` strings (`grep` `src/tg_triage/domain` and `src/tg_triage/application`). Seed files are not copies of real repositories.
 
-**Done.** Three operator GitHub capabilities remain three entry points. Checked-in **test** fixtures stay; production `fixtures/github/` may be populated in [Step 13](#step-13--live-github-smoke-operator).
+**Done.** Three operator GitHub capabilities remain three entry points. Checked-in **test** fixtures stay; production `fixtures/github/` may be populated in [Step 13](#step-13--live-github-smoke-operator). [README.md](../README.md) workflow/CLI names match the entry points.
 
 ---
 
@@ -491,6 +503,7 @@ The smoke test creates one throwaway issue via `IssueTracker.create` on a **seed
 - [src/tg_triage/infrastructure/telegram/adapter.py](../src/tg_triage/infrastructure/telegram/adapter.py)
 - [src/tg_triage/infrastructure/telegram/handlers.py](../src/tg_triage/infrastructure/telegram/handlers.py)
 - [src/tg_triage/__main__.py](../src/tg_triage/__main__.py) — `python -m tg_triage` long polling
+- [README.md](../README.md) — add `python -m tg_triage` to local setup (needs `.env` Telegram keys; default `pytest` still needs no tokens)
 - [tests/unit/test_telegram_adapter.py](../tests/unit/test_telegram_adapter.py)
 
 **Functionality (intake rules)** — [MVP System Specification, Telegram interaction model](mvp_system_specification.md#7-telegram-interaction-model):
