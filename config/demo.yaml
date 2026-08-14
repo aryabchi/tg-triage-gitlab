@@ -1,0 +1,7 @@
+repositories:
+  - acme/sales-dashboard
+  - acme/crm
+  - acme/customer-portal
+k: 10
+readme_max_chars: 2000
+issue_body_max_chars: 1000
