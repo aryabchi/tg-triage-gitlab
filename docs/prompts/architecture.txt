@@ -1,0 +1,307 @@
+@docs/mvp_system_specification.md 
+We have now agreed on the attached MVP System Specification:
+"Telegram Problems to GitLab Issues".
+
+This is a new greenfield project.
+
+Your task is to produce a proposed software architecture for this MVP.
+
+Do NOT modify files.
+Do NOT write implementation code.
+Do NOT start with Python package/file structure.
+
+Design the architecture from the system boundaries and responsibilities
+defined in the specification.
+
+The MVP must be demonstrable in less than 2 weeks, so simplicity,
+reliability, and implementation speed are primary constraints.
+
+## 1. Architectural goals
+
+The architecture should:
+
+- implement the complete MVP workflow end-to-end;
+- clearly separate deterministic application logic from LLM/agentic logic;
+- keep external systems (Telegram and GitLab) behind clear boundaries;
+- make the workflow testable without requiring live external systems;
+- persist enough state to support the workflow;
+- allow future additional knowledge sources without requiring a major
+  redesign;
+- avoid infrastructure and abstractions that are not justified by the MVP.
+
+Do not optimize for hypothetical scale.
+
+## 2. Start with system-level architecture
+
+Identify the major architectural components.
+
+For each component describe:
+
+- responsibility;
+- inputs;
+- outputs;
+- dependencies;
+- whether it is deterministic, LLM/agentic, external, or human;
+- why the component exists.
+
+Do not introduce a component unless there is a clear responsibility for it.
+
+## 3. Application workflow
+
+Design the application-level workflow for:
+
+A. Telegram problem ingestion
+
+B. List Owner requesting a triage run
+
+C. Loading Problems for the requested period
+
+D. Triage
+
+E. Human review/editing of the triage result
+
+F. Parsing the final Markdown
+
+G. Creating GitLab Issues
+
+Show where state is persisted between these stages.
+
+Distinguish:
+- workflow orchestration;
+- domain logic;
+- infrastructure/integration logic.
+
+## 4. Triage architecture
+
+This is the most important architectural decision.
+
+Evaluate two alternatives:
+
+### A. Deterministic workflow + LLM reasoning
+
+A deterministic application workflow orchestrates:
+- retrieval;
+- LLM calls;
+- GitLab tools;
+- validation;
+- persistence.
+
+### B. Autonomous tool-using agent
+
+The LLM itself decides:
+- what information to retrieve;
+- which GitLab searches to perform;
+- whether more information is needed;
+- how to reason over the results.
+
+Compare these approaches specifically for this MVP.
+
+Consider:
+- implementation complexity;
+- reliability;
+- debuggability;
+- reproducibility;
+- observability;
+- ability to demonstrate meaningful agentic behavior;
+- future extensibility.
+
+Recommend one.
+
+If you recommend A, explain where the actual agentic/LLM behavior should
+still exist.
+
+## 5. Domain model
+
+Review and refine these concepts:
+
+- Problem
+- TriageRun
+- TriageItem
+- HumanDecision
+- GitLabIssueLink
+
+For each, determine:
+
+- whether it should be a persistent domain entity;
+- whether it is only an in-memory/application concept;
+- important fields;
+- relationships with other entities.
+
+Do not over-model the MVP.
+
+## 6. External integrations
+
+Define architectural boundaries for:
+
+### Telegram
+
+How should Telegram-specific concepts be converted into the
+application's domain model?
+
+### GitLab
+
+Separate:
+- retrieving GitLab knowledge for triage;
+- searching existing Issues;
+- identifying Projects;
+- creating Issues.
+
+The domain/application layer should not depend directly on the GitLab API.
+
+## 7. Knowledge retrieval
+
+The MVP currently uses:
+
+- persisted Telegram Problems;
+- GitLab Projects;
+- GitLab Issues;
+- GitLab README/project information;
+- optionally other repository-related metadata explicitly included
+  in the specification.
+
+There is an open architectural question around future additional
+company knowledge sources such as internal documentation, Wiki,
+Confluence, knowledge bases, etc.
+
+Design an extension point for additional knowledge sources.
+
+Important:
+DO NOT build a vector store/RAG architecture merely because it may
+be useful later.
+
+Show the smallest abstraction that allows another knowledge source
+to be introduced later without redesigning the Triage domain/workflow.
+
+## 8. LLM boundary
+
+Define precisely:
+
+- what the LLM receives;
+- what tools it can access;
+- what structured result it must return;
+- what the application validates;
+- what decisions remain deterministic;
+- what happens when the LLM is uncertain.
+
+The architecture must enforce:
+
+LLM recommends/reasons
+        ↓
+application validates
+        ↓
+deterministic application logic executes side effects
+
+In particular, the LLM must not directly create GitLab Issues.
+
+## 9. Persistence
+
+Recommend a minimal persistence approach for the MVP.
+
+Explain:
+
+- what needs to be persisted;
+- what does not need to be persisted;
+- which entities require durable state;
+- how TriageRun state relates to Problems;
+- whether the MVP needs a relational database or whether a simpler
+  persistence mechanism is sufficient.
+
+Do not choose technology merely because it is popular.
+
+## 10. Human-in-the-loop boundary
+
+The List Owner's final Markdown is authoritative.
+
+Design the architecture so that:
+
+Triage recommendation
+        ↓
+human modification
+        ↓
+final Markdown
+        ↓
+deterministic parsing/validation
+        ↓
+GitLab execution
+
+The architecture should not assume a sophisticated UI for the MVP.
+
+## 11. Architecture diagrams
+
+Produce at least:
+
+1. System context diagram
+2. Container/component architecture diagram
+3. End-to-end workflow sequence/flow diagram
+
+Use Mermaid.
+
+Keep diagrams compatible with standard Mermaid syntax:
+- no HTML tags inside node labels;
+- quote labels containing spaces or punctuation;
+- keep labels concise.
+
+## 12. Architectural decisions
+
+Finish with an Architecture Decision Summary.
+
+For each important decision provide:
+
+Decision:
+Reason:
+Alternative considered:
+Why rejected:
+
+Focus especially on:
+
+- agent vs deterministic workflow;
+- persistence approach;
+- GitLab integration boundary;
+- LLM/tool boundary;
+- knowledge retrieval abstraction;
+- human/Markdown boundary;
+- orchestration approach.
+
+## 13. Implementation boundary
+
+Only after the architecture is established, propose a high-level
+implementation structure.
+
+Do NOT generate detailed files/classes yet.
+
+Show approximately:
+
+- application layer;
+- domain layer;
+- infrastructure/integration layer;
+- agent/LLM layer;
+- interfaces/adapters.
+
+Explain how the structure follows from the architecture.
+
+## 14. Final output
+
+Return the result in this order:
+
+1. Architectural overview
+2. Architecture principles
+3. Major components
+4. Component responsibilities / inputs / outputs
+5. Domain model
+6. Triage/LLM architecture
+7. External integration boundaries
+8. Knowledge retrieval architecture
+9. Persistence architecture
+10. End-to-end workflows
+11. Mermaid diagrams
+12. Key architectural decisions
+13. Remaining architectural questions
+14. High-level implementation structure
+15. Recommended implementation sequence
+
+Be conservative.
+
+This is an MVP for a <2 week demo.
+Prefer the simplest architecture that preserves the important
+boundaries and allows future evolution.
+

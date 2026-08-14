@@ -1,0 +1,74 @@
+
+@docs/mvp_system_specification.md @docs/mvp_architecture.md 
+Now produce a step-by-step implementation plan for this 
+project.
+
+Do NOT implement anything.
+Do NOT modify files.
+
+The implementation will be performed incrementally by a coding agent,
+so the plan must be executable and independently verifiable step by
+step.
+
+## For every implementation step provide
+
+1. Step name
+2. Purpose
+3. Components/files to create or modify
+4. What functionality is implemented
+6. Verification procedure
+7. Expected verification result
+8. Definition of Done
+
+The verification procedure must be concrete enough that another agent
+can execute it without interpreting the architecture.
+
+Prefer executable verification where practical:
+- unit tests;
+- integration tests;
+- CLI commands;
+- local smoke tests;
+- mocked external APIs;
+- sample input/output.
+
+## External systems
+
+The implementation must be testable without live Telegram/GitHub/LLM/Database for every step.
+
+However, include explicit integration/smoke-test steps against the real
+Telegram/GitHub APIs where those are necessary to prove the MVP works.
+
+## LLM
+
+Define how the LLM integration should initially be implemented.
+
+The plan must specify:
+- where prompts live;
+- how LLM output is validated;
+- how invalid/uncertain output is handled;
+- how the LLM is isolated.
+
+## Testing
+
+For each major component identify the minimum useful test level:
+
+- unit;
+- integration;
+- end-to-end/smoke.
+
+Do not aim for exhaustive test coverage.
+
+## Final output
+
+Return:
+
+1. Implementation strategy
+2. Dependency/order rationale
+3. Numbered implementation steps
+4. Verification and Definition of Done for every step
+6. Final MVP verification checklist
+7. Two concrete real end-to-end scenarios for MVP Demo
+8. Open questions if any
+
+Do not write code.
+Do not modify files.
