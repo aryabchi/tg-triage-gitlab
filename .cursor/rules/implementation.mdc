@@ -1,0 +1,16 @@
+---
+description: implementation rules
+alwaysApply: false
+---
+
+* pyproject.toml
+* Dedicated virtual environment
+* Prefer Python version 3.13, avoid latest releases
+* Type hints and typing syntax compatible with Python version
+* No unnecessary Any
+* Architecture boundaries
+* External API isolation
+* External integrations mockable
+* Secrets/configuration handling
+* Prefer simpler implementations consistent with architecture
+* Prefer docstings and self-documenting code
