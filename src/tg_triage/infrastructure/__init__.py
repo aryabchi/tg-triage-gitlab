@@ -1,1 +1,1 @@
-"""SQLite adapters. External systems stay behind ports."""
+"""Infrastructure adapters: SQLite, fixture files, and GitHub REST."""

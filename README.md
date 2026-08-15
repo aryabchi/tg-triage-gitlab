@@ -13,7 +13,7 @@ Python package: `tg_triage`.
 3. Owner edits the file outside Telegram and uploads it.
 4. Owner `/execute` plus Confirm creates a GitHub issue or skips an existing one.
 
-Operator scripts (after later implementation): `tg-triage-seed`, `tg-triage-refresh`, `tg-triage-drop`. They manage **fake demo repositories only**.
+Operator scripts `tg-triage-seed`, `tg-triage-refresh`, and `tg-triage-drop` manage **fake demo repositories only**.
 
 ## Dependencies
 
