@@ -48,3 +48,9 @@ class FakeProblemRepository:
         if problem.id not in self._by_id:
             raise KeyError(problem.id)
         self._by_id[problem.id] = problem
+
+    def add(self, problem: Problem) -> Problem:
+        """Store a problem under its given id so tests can use known Problem ids."""
+        self._by_id[problem.id] = problem
+        self._next_id = max(self._next_id, problem.id + 1)
+        return problem
