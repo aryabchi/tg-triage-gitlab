@@ -35,3 +35,6 @@ tg_triage = ["llm/prompts/*.md", "llm/schemas/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "smoke: live network smoke tests (opt-in with RUN_*_SMOKE=1)",
+]
