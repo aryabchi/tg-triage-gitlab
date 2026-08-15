@@ -21,7 +21,7 @@ Operator scripts `tg-triage-seed`, `tg-triage-refresh`, and `tg-triage-drop` man
 - Runtime: `python-telegram-bot`, `httpx`, `pydantic`, `pydantic-settings`, `pyyaml`
 - Stdlib: `sqlite3`
 - Dev: `pytest`, `ruff`
-- External systems (not Python packages): Telegram Bot API, GitHub Issues API, OpenRouter or host Ollama
+- External systems (not Python packages): Telegram Bot API, GitHub Issues API, host Ollama (default) or OpenRouter
 
 Live tokens are optional for tests. Default `pytest` does not call Telegram, GitHub, or an LLM.
 
@@ -40,10 +40,12 @@ pytest -q
 
 Leave secrets in `.env` blank for default tests. Tests use a temporary env file and do not read the real `.env`.
 
-To run the bot (needs Telegram keys in `.env`; GitHub token for Confirm):
+To run the bot (needs Telegram keys in `.env`; GitHub token for Confirm; host Ollama for `/compile`):
 
 ```text
 python -m tg_triage
 ```
+
+Live BotFather, group, seed/refresh/drop, and Ollama steps: [docs/operator_setup.md](docs/operator_setup.md).
 
 Default `pytest` still needs no tokens.

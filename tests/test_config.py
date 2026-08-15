@@ -37,9 +37,9 @@ def temp_env(tmp_path: Path, isolated_env: None) -> Path:
 def test_llm_defaults(temp_env: Path) -> None:
     config = load_config(env_file=temp_env, yaml_path=DEMO_YAML)
     assert config.settings.llm_model == DEFAULT_LLM_MODEL
-    assert config.settings.llm_model == "openai/gpt-oss-20b:free"
+    assert config.settings.llm_model == "qwen3:8b"
     assert config.settings.llm_base_url == DEFAULT_LLM_BASE_URL
-    assert config.settings.llm_base_url == "https://openrouter.ai/api/v1"
+    assert config.settings.llm_base_url == "http://localhost:11434/v1"
 
 
 def test_demo_yaml_repositories(temp_env: Path) -> None:
@@ -57,12 +57,13 @@ def test_demo_yaml_repositories(temp_env: Path) -> None:
 def test_temp_env_overrides_llm(tmp_path: Path, isolated_env: None) -> None:
     env_file = tmp_path / ".env"
     env_file.write_text(
-        "LLM_MODEL=qwen3:8b\nLLM_BASE_URL=http://localhost:11434/v1\n",
+        "LLM_MODEL=openai/gpt-oss-20b:free\n"
+        "LLM_BASE_URL=https://openrouter.ai/api/v1\n",
         encoding="utf-8",
     )
     config = load_config(env_file=env_file, yaml_path=DEMO_YAML)
-    assert config.settings.llm_model == "qwen3:8b"
-    assert config.settings.llm_base_url == "http://localhost:11434/v1"
+    assert config.settings.llm_model == "openai/gpt-oss-20b:free"
+    assert config.settings.llm_base_url == "https://openrouter.ai/api/v1"
 
 
 def test_never_reads_repo_dotenv(temp_env: Path) -> None:

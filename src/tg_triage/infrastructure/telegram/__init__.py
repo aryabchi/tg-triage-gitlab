@@ -2,6 +2,7 @@
 
 from tg_triage.infrastructure.telegram.adapter import (
     TelegramBotGateway,
+    build_application,
     configure_application,
     incoming_from_update,
     register_handlers,
@@ -17,6 +18,7 @@ __all__ = [
     "IncomingCallback",
     "IncomingMessage",
     "TelegramBotGateway",
+    "build_application",
     "configure_application",
     "incoming_from_update",
     "register_handlers",

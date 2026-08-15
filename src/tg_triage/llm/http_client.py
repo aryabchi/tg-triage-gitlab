@@ -7,13 +7,17 @@ Temperature is 0. JSON ``response_format`` is requested when the API allows it.
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Sequence
 from pathlib import Path
 
 import httpx
 
 from tg_triage.domain import EvidencePack, EvidenceSnippet, Problem
-from tg_triage.ports.llm import ClusterItem
+from tg_triage.ports.llm import ClusterItem, LlmCallError
+
+_RETRYABLE_STATUS = frozenset({408, 429, 500, 502, 503, 504})
+logger = logging.getLogger(__name__)
 
 PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
 
@@ -70,27 +74,42 @@ class HttpLlmJudgment:
         headers: dict[str, str] = {}
         if self._api_key:
             headers["Authorization"] = f"Bearer {self._api_key}"
-        response = self._http.post(
-            "/chat/completions",
-            headers=headers,
-            json={
-                "model": self._model,
-                "temperature": 0,
-                "response_format": {"type": "json_object"},
-                "messages": [
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": user},
-                ],
-            },
-        )
-        response.raise_for_status()
-        body = response.json()
+        logger.info("LLM %s request starting (retry=%s)", prompt_name, retry)
         try:
-            content = body["choices"][0]["message"]["content"]
-        except (KeyError, IndexError, TypeError) as exc:
-            raise ValueError("LLM response missing choices[0].message.content") from exc
+            response = self._http.post(
+                "/chat/completions",
+                headers=headers,
+                json={
+                    "model": self._model,
+                    "temperature": 0,
+                    "response_format": {"type": "json_object"},
+                    "messages": [
+                        {"role": "system", "content": system},
+                        {"role": "user", "content": user},
+                    ],
+                },
+            )
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            code = exc.response.status_code
+            raise LlmCallError(
+                f"LLM HTTP {code}",
+                retryable=code in _RETRYABLE_STATUS,
+            ) from exc
+        except httpx.RequestError as exc:
+            raise LlmCallError(
+                f"LLM request failed: {type(exc).__name__}: {exc}",
+                retryable=True,
+            ) from exc
+        try:
+            content = response.json()["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError, ValueError) as exc:
+            raise LlmCallError(
+                "LLM response missing choices[0].message.content",
+                retryable=False,
+            ) from exc
         if not isinstance(content, str):
-            raise ValueError("LLM message content must be a string")
+            raise LlmCallError("LLM message content must be a string", retryable=False)
         return content
 
 

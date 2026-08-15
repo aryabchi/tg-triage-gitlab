@@ -6,6 +6,7 @@ with a fake gateway and synthetic messages.
 
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Collection
 from dataclasses import dataclass
@@ -18,6 +19,7 @@ from tg_triage.markdown import PlanValidationError
 from tg_triage.ports.repositories import ProblemRepository
 from tg_triage.ports.telegram import TelegramGateway
 
+logger = logging.getLogger(__name__)
 _COMMAND = re.compile(r"^/([A-Za-z]+)(?:@\S+)?(?:\s+(.*))?$", re.DOTALL)
 _RUN_ID = re.compile(r"(\d+)")
 
@@ -155,7 +157,13 @@ class BotHandlers:
         except ValueError:
             self._gateway.send_text(chat_id, "Usage: /compile YYYY-MM-DD")
             return
-        result = self._orchestrator.compile(owner_id, since)
+        logger.info("compile requested since %s", since.isoformat())
+        try:
+            result = self._orchestrator.compile(owner_id, since)
+        except Exception:
+            logger.exception("compile command failed")
+            self._gateway.send_text(chat_id, "Compile failed. No document sent.")
+            return
         if result.superseded_warning:
             self._gateway.send_text(chat_id, "Previous pending run was superseded.")
         if result.no_problems:

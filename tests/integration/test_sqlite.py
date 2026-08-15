@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from dataclasses import replace
 from datetime import date, datetime
 from pathlib import Path
@@ -51,6 +52,26 @@ def _run(*, status: TriageRunStatus = TriageRunStatus.PENDING) -> TriageRun:
         status=status,
         created_at=datetime(2026, 8, 14, 9, 0, 0),
     )
+
+
+def test_insert_from_another_thread(tmp_path: Path) -> None:
+    with SqliteDb(tmp_path / "store.sqlite") as db:
+        created = datetime(2026, 8, 13, 10, 0, 0)
+        errors: list[BaseException] = []
+
+        def work() -> None:
+            try:
+                db.problems.insert(_problem(message_id=11, created_at=created))
+            except BaseException as exc:
+                errors.append(exc)
+
+        thread = threading.Thread(target=work)
+        thread.start()
+        thread.join()
+        assert errors == []
+        stored = db.problems.list_ingested_since(created)
+        assert len(stored) == 1
+        assert stored[0].original_text == "Экспорт дашборда продаж больше не работает."
 
 
 def test_insert_problem(tmp_path: Path) -> None:

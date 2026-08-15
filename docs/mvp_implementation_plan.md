@@ -81,7 +81,7 @@ Invalid / uncertain handling:
 - Semantic uncertainty → `outcome = uncertain`, rendered under `## Uncertain`, not executed as create
 - Owner may move a `###` block between `## Create` / `## Skip` / `## Uncertain`, or delete it (exclude; Problems stay `ingested`)
 
-**Provider order (config, not a router):** prefer OpenRouter `openai/gpt-oss-20b:free` (`LLM_BASE_URL=https://openrouter.ai/api/v1`). If that path is unavailable, the **same host machine** runs Ollama `qwen3:8b` and the operator switches env to `LLM_BASE_URL=http://localhost:11434/v1`, `LLM_MODEL=qwen3:8b`, empty/unused `LLM_API_KEY`. Defaults and when tokens are required: [Open questions](#8-open-questions).
+**Provider order (config, not a router):** default is host Ollama `qwen3:8b` (`LLM_BASE_URL=http://localhost:11434/v1`, unused `LLM_API_KEY`). OpenRouter `openai/gpt-oss-20b:free` remains a config swap (`LLM_BASE_URL=https://openrouter.ai/api/v1` plus `LLM_API_KEY`) if the host model is unavailable. No in-process model router. Defaults and when tokens are required: [Open questions](#8-open-questions).
 
 **Minimum useful test level per major component**
 
@@ -158,7 +158,7 @@ python -c "import tg_triage; print(tg_triage.__file__)"
 pytest tests/test_config.py -q
 ```
 
-Use a temp env in the test. Assert default `LLM_MODEL` is `openai/gpt-oss-20b:free` and default `LLM_BASE_URL` is `https://openrouter.ai/api/v1`. Assert `config/demo.yaml` parses to three `RepositoryId` values (`acme/sales-dashboard`, `acme/crm`, `acme/customer-portal`).
+Use a temp env in the test. Assert default `LLM_MODEL` is `qwen3:8b` and default `LLM_BASE_URL` is `http://localhost:11434/v1`. Assert `config/demo.yaml` parses to three `RepositoryId` values (`acme/sales-dashboard`, `acme/crm`, `acme/customer-portal`).
 
 README check (no extra test file required): `README.md` exists at repo root and contains headings (or equivalent titled sections) for name, purpose, workflow, dependencies, and local setup. Setup commands in the README match the verification block above.
 
@@ -563,21 +563,20 @@ Feed synthetic `Update`-like payloads (or call handler functions with a fake `Te
 
 ### Step 16 — Live LLM compile smoke (operator)
 
-**Purpose.** Prove preferred OpenRouter `gpt-oss-20b:free`, then host Ollama `qwen3:8b` if needed, returns valid cluster+match JSON against **fake** fixtures. Requires LLM config — see [Open questions](#8-open-questions).
+**Purpose.** Prove host Ollama `qwen3:8b`, then OpenRouter `gpt-oss-20b:free` if needed, returns valid cluster+match JSON against **fake** fixtures. Requires LLM config — see [Open questions](#8-open-questions).
 
 **Create:** [tests/smoke/test_llm_live.py](../tests/smoke/test_llm_live.py) skipped unless `RUN_LLM_SMOKE=1`; uses real `HttpLlmJudgment` + checked-in/refreshed fixtures + 3–4 canned **Russian** Problem texts; **does not** send Telegram or create GitHub issues.
 
 **Verification.**
 
 ```text
-# Preferred:
-# LLM_BASE_URL=https://openrouter.ai/api/v1
-# LLM_MODEL=openai/gpt-oss-20b:free
-# LLM_API_KEY=<openrouter key>
+# Preferred (host Ollama):
+# LLM_BASE_URL=http://localhost:11434/v1
+# LLM_MODEL=qwen3:8b
 RUN_LLM_SMOKE=1 pytest tests/smoke/test_llm_live.py -q
 ```
 
-If OpenRouter fails, rerun with host Ollama: `LLM_BASE_URL=http://localhost:11434/v1`, `LLM_MODEL=qwen3:8b`.
+If Ollama is unavailable, rerun with OpenRouter: `LLM_BASE_URL=https://openrouter.ai/api/v1`, `LLM_MODEL=openai/gpt-oss-20b:free`, `LLM_API_KEY`.
 
 Assert: valid partition; every repository is configured or `unknown`; do not hard-fail if the model clusters differently — assert **schema + identity validation passed** and markdown renders. Dump debug JSON under `debug/triage-runs/smoke/`.
 
@@ -634,7 +633,7 @@ Assert: valid partition; every repository is configured or `unknown`; do not har
 - Second `tg-triage-seed` prints skip messages and does not duplicate issues
 - GitHub create smoke returns a real `html_url`
 - Telegram: one group message → SQLite row; owner receives `triage-run-<id>.md`; upload + `/execute` + Cancel is safe
-- Live LLM compile produces a schema-valid contract against fixtures (OpenRouter first, Ollama on the host if needed)
+- Live LLM compile produces a schema-valid contract against fixtures (Ollama first, OpenRouter if the host model is down)
 
 **Gate C — demo acceptance** (maps 1:1 to [MVP System Specification, MVP success criteria](mvp_system_specification.md#19-mvp-success-criteria)):
 
@@ -725,17 +724,17 @@ Document the BotFather + Group Privacy operator steps in [docs/operator_setup.md
 
 **How live smoke runs:** operator starts `python -m tg_triage` (library reads `TELEGRAM_BOT_TOKEN`). Follow the [Step 15](#step-15--live-telegram-smoke-operator) checklist. If the token is unset, do not start the bot; unit tests still pass.
 
-### LLM: OpenRouter first, then host Ollama
+### LLM: host Ollama first, then OpenRouter
 
 **When required:** [Step 16](#step-16--live-llm-compile-smoke-operator), and the real compile in [demo scenarios](#7-two-concrete-real-end-to-end-demo-scenarios). **Not** required for FakeLlm tests.
 
-**Where to configure:** `.env` — `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`. Defaults in config: OpenRouter base URL + `openai/gpt-oss-20b:free`.
+**Where to configure:** `.env` — `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`. Defaults in config: Ollama base URL + `qwen3:8b`.
 
-**Preferred path:** OpenRouter `openai/gpt-oss-20b:free` with `LLM_API_KEY` = OpenRouter key.
+**Preferred path:** host Ollama `qwen3:8b` with `LLM_BASE_URL=http://localhost:11434/v1` (API key unused).
 
-**Fallback:** same host machine runs Ollama `qwen3:8b`. Operator changes env to `LLM_BASE_URL=http://localhost:11434/v1`, `LLM_MODEL=qwen3:8b` (API key unused). No in-process model router.
+**Fallback:** OpenRouter `openai/gpt-oss-20b:free` with `LLM_API_KEY` = OpenRouter key. No in-process model router.
 
-**How live smoke runs:** `RUN_LLM_SMOKE=1 pytest tests/smoke/test_llm_live.py -q` with the preferred env; on failure, switch to Ollama env and rerun. Missing key → skip, not Gate A failure.
+**How live smoke runs:** `RUN_LLM_SMOKE=1 pytest tests/smoke/test_llm_live.py -q` with the default Ollama env; on failure, switch to OpenRouter env and rerun. Missing local server → skip, not Gate A failure.
 
 ### Seed create-once and drop
 

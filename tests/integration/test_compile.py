@@ -11,6 +11,7 @@ from tg_triage.domain import Problem, TriageOutcome, TriageRunStatus, assert_cov
 from tg_triage.infrastructure.fixtures import FixtureKnowledgeSource
 from tg_triage.infrastructure.sqlite import SqliteDb
 from tg_triage.markdown import parse
+from tg_triage.ports.llm import LlmCallError, LlmJudgment
 from tests.fakes import FakeLlmJudgment
 
 CANNED = Path(__file__).resolve().parents[1] / "canned_llm"
@@ -47,7 +48,7 @@ def _seed_problems(db: SqliteDb) -> None:
 
 def _service(
     db: SqliteDb,
-    llm: FakeLlmJudgment,
+    llm: LlmJudgment,
     *,
     fixture_root: Path = FIXTURES,
     debug_root: Path | None = None,
@@ -140,6 +141,82 @@ def test_invented_repo_fails_with_no_document(tmp_path: Path) -> None:
         result = _service(db, llm).compile(owner_user_id=42, since_date=SINCE)
     assert llm.cluster_calls == 1
     assert llm.match_calls == 2
+    assert result.run is not None
+    assert result.run.status == TriageRunStatus.FAILED
+    assert result.run.generated_markdown is None
+
+
+class _FailingLlm:
+    """Raises ``error`` on every cluster/match call."""
+
+    def __init__(self, error: LlmCallError) -> None:
+        self.error = error
+        self.cluster_calls = 0
+        self.match_calls = 0
+
+    def cluster(self, problems: object, *, retry: bool = False) -> str:
+        """Always raise the configured transport error."""
+        self.cluster_calls += 1
+        raise self.error
+
+    def match(self, items: object, evidence_pack: object, *, retry: bool = False) -> str:
+        """Always raise the configured transport error."""
+        self.match_calls += 1
+        raise self.error
+
+
+class _RetryThenOkLlm:
+    """Raises one retryable cluster error, then returns canned JSON."""
+
+    def __init__(self) -> None:
+        self.cluster_calls = 0
+        self.match_calls = 0
+        self._failed_once = False
+
+    def cluster(self, problems: object, *, retry: bool = False) -> str:
+        """Fail once with 429, then return canned cluster JSON."""
+        self.cluster_calls += 1
+        if not self._failed_once:
+            self._failed_once = True
+            raise LlmCallError("LLM HTTP 429", retryable=True)
+        return _read("cluster.json")
+
+    def match(self, items: object, evidence_pack: object, *, retry: bool = False) -> str:
+        """Return canned match JSON."""
+        self.match_calls += 1
+        return _read("match.json")
+
+
+def test_retryable_llm_error_retries_then_succeeds(tmp_path: Path) -> None:
+    llm = _RetryThenOkLlm()
+    with SqliteDb(tmp_path / "store.sqlite") as db:
+        _seed_problems(db)
+        result = _service(db, llm).compile(owner_user_id=42, since_date=SINCE)
+    assert llm.cluster_calls == 2
+    assert llm.match_calls == 1
+    assert result.run is not None
+    assert result.run.status == TriageRunStatus.PENDING
+    assert result.run.generated_markdown is not None
+
+
+def test_retryable_llm_error_fails_run_after_retry(tmp_path: Path) -> None:
+    llm = _FailingLlm(LlmCallError("LLM HTTP 429", retryable=True))
+    with SqliteDb(tmp_path / "store.sqlite") as db:
+        _seed_problems(db)
+        result = _service(db, llm).compile(owner_user_id=42, since_date=SINCE)
+    assert llm.cluster_calls == 2
+    assert result.run is not None
+    assert result.run.status == TriageRunStatus.FAILED
+    assert result.run.generated_markdown is None
+    assert result.run.items == ()
+
+
+def test_non_retryable_llm_error_fails_without_retry(tmp_path: Path) -> None:
+    llm = _FailingLlm(LlmCallError("LLM HTTP 401", retryable=False))
+    with SqliteDb(tmp_path / "store.sqlite") as db:
+        _seed_problems(db)
+        result = _service(db, llm).compile(owner_user_id=42, since_date=SINCE)
+    assert llm.cluster_calls == 1
     assert result.run is not None
     assert result.run.status == TriageRunStatus.FAILED
     assert result.run.generated_markdown is None

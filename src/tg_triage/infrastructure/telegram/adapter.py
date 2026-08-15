@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import logging
 from collections.abc import Awaitable
 from datetime import datetime, timezone
 
@@ -19,6 +20,7 @@ from telegram import (
     Update,
 )
 from telegram.constants import ChatType
+from telegram.error import NetworkError
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -27,6 +29,7 @@ from telegram.ext import (
     MessageHandler,
     filters,
 )
+from telegram.request import HTTPXRequest
 
 from tg_triage.infrastructure.telegram.handlers import (
     BotHandlers,
@@ -35,6 +38,9 @@ from tg_triage.infrastructure.telegram.handlers import (
 )
 
 _FLUSH_TIMEOUT = 60.0
+_BOT_CONNECT_TIMEOUT = 30.0
+_BOT_READ_TIMEOUT = 30.0
+logger = logging.getLogger(__name__)
 
 
 class TelegramBotGateway:
@@ -51,6 +57,7 @@ class TelegramBotGateway:
 
     def send_text(self, chat_id: int, text: str) -> None:
         """Send a plain message with no parse_mode."""
+        logger.info("Telegram: sending text to chat %s", chat_id)
         self._await(self._require_bot().send_message(chat_id=chat_id, text=text))
 
     def send_document(
@@ -61,6 +68,7 @@ class TelegramBotGateway:
         caption: str | None = None,
     ) -> None:
         """Send an unparsed document (parse_mode left unset)."""
+        logger.info("Telegram: sending document %s", filename)
         document = InputFile(io.BytesIO(content), filename=filename)
         self._await(
             self._require_bot().send_document(
@@ -72,6 +80,7 @@ class TelegramBotGateway:
 
     def ask_confirm(self, chat_id: int, text: str, run_id: int) -> None:
         """Send Confirm/Cancel inline buttons for ``run_id``."""
+        logger.info("Telegram: asking confirm for run %s", run_id)
         markup = InlineKeyboardMarkup(
             [
                 [
@@ -102,7 +111,11 @@ class TelegramBotGateway:
         """Run a Bot coroutine on the polling loop from a worker thread."""
         if self._loop is None:
             raise RuntimeError("Telegram gateway is not bound")
-        asyncio.run_coroutine_threadsafe(coro, self._loop).result(timeout=_FLUSH_TIMEOUT)
+        try:
+            asyncio.run_coroutine_threadsafe(coro, self._loop).result(timeout=_FLUSH_TIMEOUT)
+        except (NetworkError, TimeoutError) as exc:
+            logger.warning("Telegram outbound call timed out: %s", exc)
+            raise
 
 
 def incoming_from_update(
@@ -140,17 +153,23 @@ def incoming_from_update(
 
 
 def register_handlers(application: Application, bot_handlers: BotHandlers) -> None:
-    """Attach compile, execute, text, document, and callback handlers."""
+    """Attach compile, execute, text, document, callback, and error handlers."""
 
     async def on_text(update: Update, _context: ContextTypes.DEFAULT_TYPE) -> None:
         await asyncio.to_thread(bot_handlers.on_message, incoming_from_update(update))
 
-    async def on_document(update: Update, _context: ContextTypes.DEFAULT_TYPE) -> None:
+    async def on_document(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         message = update.effective_message
         if message is None or message.document is None:
             return
-        file = await message.document.get_file()
-        payload = bytes(await file.download_as_bytearray())
+        logger.info("Telegram: downloading uploaded document")
+        try:
+            file = await message.document.get_file()
+            payload = bytes(await file.download_as_bytearray())
+        except NetworkError as exc:
+            logger.warning("Telegram: document download timed out: %s", exc)
+            await _notify_retry(update, context, "Upload failed. Send the file again.")
+            return
         incoming = incoming_from_update(update, document_bytes=payload)
         await asyncio.to_thread(bot_handlers.on_message, incoming)
 
@@ -171,6 +190,48 @@ def register_handlers(application: Application, bot_handlers: BotHandlers) -> No
     application.add_handler(MessageHandler(filters.Document.ALL, on_document))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
     application.add_handler(CallbackQueryHandler(on_callback))
+    application.add_error_handler(_on_telegram_error)
+
+
+async def _on_telegram_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Log unhandled PTB errors. Do not send when Telegram itself timed out."""
+    logger.error("Telegram handler failed", exc_info=context.error)
+    if isinstance(context.error, NetworkError):
+        return
+    if not isinstance(update, Update) or update.effective_chat is None:
+        return
+    await _notify_retry(update, context, "Something went wrong. Try again.")
+
+
+async def _notify_retry(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    text: str,
+) -> None:
+    """Best-effort DM after a handler failure. Swallows a second timeout."""
+    chat = update.effective_chat
+    if chat is None:
+        return
+    try:
+        await context.bot.send_message(chat_id=chat.id, text=text)
+    except NetworkError as exc:
+        logger.warning("Telegram: could not send retry notice: %s", exc)
+
+
+def build_application(token: str) -> Application:
+    """Build a polling app with a longer Bot API connect timeout.
+
+    ``getUpdates`` keeps PTB's default long-poll client. Only ``sendMessage``,
+    ``getFile``, and other bot methods use this request object.
+    """
+    request = HTTPXRequest(
+        connect_timeout=_BOT_CONNECT_TIMEOUT,
+        read_timeout=_BOT_READ_TIMEOUT,
+        write_timeout=_BOT_READ_TIMEOUT,
+        pool_timeout=5.0,
+        media_write_timeout=60.0,
+    )
+    return Application.builder().token(token).request(request).build()
 
 
 def configure_application(

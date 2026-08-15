@@ -300,3 +300,65 @@ def test_non_owner_dm_compile_does_not_compile(tmp_path: Path) -> None:
     assert gateway.documents == []
     assert gateway.texts == [(OWNER_CHAT, "Not authorized.")]
     db.close()
+
+
+def test_owner_compile_llm_error_sends_failed_text(tmp_path: Path) -> None:
+    handlers, gateway, _tracker, _llm, db = _harness(tmp_path)
+    _ingest_scenario(handlers, db)
+    handlers.on_message(_owner_text("/compile 2026-08-13"))
+    assert gateway.documents == []
+    assert (OWNER_CHAT, "Compile failed. No document sent.") in gateway.texts
+    run = db.runs.get(1)
+    assert run is not None
+    assert run.status == TriageRunStatus.FAILED
+    assert run.generated_markdown is None
+    db.close()
+
+
+def test_register_handlers_installs_error_handler() -> None:
+    from telegram.ext import Application
+
+    from tg_triage.infrastructure.telegram.adapter import register_handlers
+
+    application = Application.builder().token("123:ABC").build()
+    register_handlers(application, _UnusedHandlers())
+    assert application.error_handlers
+
+
+def test_build_application_uses_longer_connect_timeout() -> None:
+    from tg_triage.infrastructure.telegram.adapter import build_application
+
+    application = build_application("123:ABC")
+    timeout = application.bot.request._client_kwargs["timeout"]
+    assert timeout.connect == 30.0
+    assert timeout.read == 30.0
+
+
+def test_error_handler_does_not_reply_on_timeout() -> None:
+    import asyncio
+    from unittest.mock import AsyncMock, MagicMock
+
+    from telegram import Update
+    from telegram.error import TimedOut
+
+    from tg_triage.infrastructure.telegram.adapter import _on_telegram_error
+
+    update = MagicMock(spec=Update)
+    update.effective_chat.id = 42
+    context = MagicMock()
+    context.error = TimedOut("Timed out")
+    context.bot.send_message = AsyncMock()
+    asyncio.run(_on_telegram_error(update, context))
+    context.bot.send_message.assert_not_called()
+
+
+class _UnusedHandlers:
+    """Stub passed only so handler registration can close over an object."""
+
+    def on_message(self, message: object) -> None:
+        """Unused. Registration only closes over this object."""
+        return None
+
+    def on_callback(self, callback: object) -> None:
+        """Unused. Registration only closes over this object."""
+        return None

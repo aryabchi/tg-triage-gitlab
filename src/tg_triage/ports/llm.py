@@ -9,6 +9,19 @@ from typing import Protocol
 from tg_triage.domain import EvidencePack, Problem
 
 
+class LlmCallError(Exception):
+    """The judgment adapter could not complete a cluster or match call.
+
+    ``retryable`` is True for transient failures such as HTTP 429 or a dropped
+    connection. Permanent failures (auth, 4xx other than 408/429) are not.
+    """
+
+    def __init__(self, message: str, *, retryable: bool = False) -> None:
+        """Store whether compile should retry this failure once."""
+        super().__init__(message)
+        self.retryable = retryable
+
+
 @dataclass(frozen=True, slots=True)
 class ClusterItem:
     """One cluster: a summary and the Problem ids it covers."""

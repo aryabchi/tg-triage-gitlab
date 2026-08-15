@@ -1,7 +1,8 @@
 """Load application configuration from environment variables and YAML.
 
 Secrets never live in this module. Tests must pass an explicit env file and
-must not rely on a repository-root `.env`.
+must not rely on a repository-root `.env`. Runtime LLM HTTP timeouts are
+module constants used by ``python -m tg_triage`` (local match can exceed 120s).
 """
 
 from __future__ import annotations
@@ -17,8 +18,10 @@ from tg_triage.domain import RepositoryId
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_YAML_PATH = REPO_ROOT / "config" / "demo.yaml"
 
-DEFAULT_LLM_BASE_URL = "https://openrouter.ai/api/v1"
-DEFAULT_LLM_MODEL = "openai/gpt-oss-20b:free"
+DEFAULT_LLM_BASE_URL = "http://localhost:11434/v1"
+DEFAULT_LLM_MODEL = "qwen3:8b"
+LLM_CONNECT_TIMEOUT = 10.0
+LLM_READ_TIMEOUT = 300.0
 
 
 class MissingSettingsError(Exception):

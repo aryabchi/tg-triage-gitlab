@@ -10,7 +10,7 @@ import pytest
 
 from tg_triage.domain import EvidencePack, Problem
 from tg_triage.llm.http_client import HttpLlmJudgment
-from tg_triage.ports.llm import ClusterItem
+from tg_triage.ports.llm import ClusterItem, LlmCallError
 
 CREATED_AT = datetime(2026, 8, 13, 10, 0, 0)
 
@@ -86,5 +86,49 @@ def test_http_500_raises() -> None:
         base_url="https://openrouter.ai/api/v1",
     )
     llm = HttpLlmJudgment(http, model="openai/gpt-oss-20b:free")
-    with pytest.raises(httpx.HTTPStatusError):
+    with pytest.raises(LlmCallError) as caught:
         llm.cluster(_problems())
+    assert caught.value.retryable is True
+
+
+def test_http_429_is_retryable() -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(429, text="rate limited")
+
+    http = httpx.Client(
+        transport=httpx.MockTransport(handler),
+        base_url="https://openrouter.ai/api/v1",
+    )
+    llm = HttpLlmJudgment(http, model="openai/gpt-oss-20b:free")
+    with pytest.raises(LlmCallError) as caught:
+        llm.cluster(_problems())
+    assert caught.value.retryable is True
+
+
+def test_http_401_is_not_retryable() -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(401, text="unauthorized")
+
+    http = httpx.Client(
+        transport=httpx.MockTransport(handler),
+        base_url="https://openrouter.ai/api/v1",
+    )
+    llm = HttpLlmJudgment(http, model="openai/gpt-oss-20b:free")
+    with pytest.raises(LlmCallError) as caught:
+        llm.cluster(_problems())
+    assert caught.value.retryable is False
+
+
+def test_connect_error_is_retryable() -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("getaddrinfo failed")
+
+    http = httpx.Client(
+        transport=httpx.MockTransport(handler),
+        base_url="https://openrouter.ai/api/v1",
+    )
+    llm = HttpLlmJudgment(http, model="openai/gpt-oss-20b:free")
+    with pytest.raises(LlmCallError) as caught:
+        llm.cluster(_problems())
+    assert caught.value.retryable is True
+    assert "ConnectError" in str(caught.value)
