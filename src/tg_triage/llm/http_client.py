@@ -97,9 +97,10 @@ class HttpLlmJudgment:
                 retryable=code in _RETRYABLE_STATUS,
             ) from exc
         except httpx.RequestError as exc:
+            retryable = isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout))
             raise LlmCallError(
                 f"LLM request failed: {type(exc).__name__}: {exc}",
-                retryable=True,
+                retryable=retryable,
             ) from exc
         try:
             content = response.json()["choices"][0]["message"]["content"]

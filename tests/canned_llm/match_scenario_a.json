@@ -2,23 +2,23 @@
   "items": [
     {
       "problem_ids": [101, 102],
-      "outcome": "create_new",
+      "outcome": "link_existing",
       "repository": "acme/sales-dashboard",
-      "existing": null,
+      "existing": "acme/sales-dashboard#81",
       "priority": "P1",
-      "title": "Sales dashboard export hangs",
-      "body": "Sales dashboard export never finishes (spinner).\nReported by 2 users.",
-      "rationale": "два похожих отчёта про экспорт"
+      "title": "Экспорт дашборда продаж не завершается",
+      "body": "Проблема с экспортом дашборда продаж: выгрузка CSV блокирует интерфейс и не завершается.",
+      "rationale": "Совпадает с существующей проблемой в репозитории acme/sales-dashboard (issue #81), описанной в README и метаданных."
     },
     {
       "problem_ids": [103],
-      "outcome": "uncertain",
-      "repository": "unknown",
+      "outcome": "create_new",
+      "repository": "acme/crm",
       "existing": null,
-      "priority": null,
-      "title": "Синхронизация клиентов задерживается",
-      "body": "",
-      "rationale": "Could be acme/crm or acme/customer-portal"
+      "priority": "P2",
+      "title": "Задержка синхронизации клиентов",
+      "body": "Задержка синхронизации клиентов между системами, возможно, связанная с заданиями синхронизации.",
+      "rationale": "Репозиторий acme/crm содержит метаданные и README о синхронизации клиентов, но нет соответствующей проблемы в истории issues."
     }
   ]
 }

@@ -1,5 +1,6 @@
 """Demo scenarios A then B with every external port faked.
 
+Canned LLM JSON follows live qwen3:8b outcomes (debug/7 for A, debug/9 for B).
 No Telegram, GitHub, live LLM, or database server. Uploaded Markdown is the
 execute authority; confirm is required before tracker writes.
 """
@@ -38,7 +39,6 @@ SCENARIO_B = (
     "CSV-экспорт дашборда всё ещё висит — как раньше.",
     "Что-то не так с клиентами, не понятно: портал или CRM.",
 )
-CRM_BODY = "Синхронизация клиентов задерживается. Нужна проверка CRM."
 
 
 def _canned(name: str) -> str:
@@ -90,22 +90,8 @@ def _orchestrator(
     )
 
 
-def _owner_edit_uncertain_to_crm_create(markdown: str) -> str:
-    """Move the Uncertain block into Create on acme/crm and add a Body."""
-    prefix, separator, uncertain = markdown.partition("\n## Uncertain\n")
-    if not separator:
-        raise AssertionError("generated markdown has no Uncertain section")
-    block = uncertain.strip("\n").replace("- Repo: unknown", "- Repo: acme/crm", 1)
-    if "- Body:" not in block:
-        block = f"{block}\n- Body: |\n    {CRM_BODY}"
-    skip_at = prefix.find("\n## Skip\n")
-    if skip_at < 0:
-        return f"{prefix.rstrip()}\n\n{block}\n"
-    return f"{prefix[:skip_at].rstrip()}\n\n{block}\n{prefix[skip_at:].rstrip()}\n"
-
-
-def test_demo_scenario_a_resolves_uncertain_to_create(tmp_path: Path) -> None:
-    """A1–A7: cluster two export reports, resolve Uncertain to a CRM create."""
+def test_demo_scenario_a_skips_seed_export_and_creates_crm(tmp_path: Path) -> None:
+    """A: cluster two export reports as Skip #81; Create sync on crm."""
     tracker = FakeIssueTracker()
     llm = FakeLlmJudgment()
     with SqliteDb(tmp_path / "store.sqlite") as db:
@@ -122,25 +108,24 @@ def test_demo_scenario_a_resolves_uncertain_to_create(tmp_path: Path) -> None:
         generated_text = generated.decode("utf-8")
         assert "## Legend" in generated_text
         assert "## Create" in generated_text
-        assert "## Uncertain" in generated_text
-        assert "## Skip" not in generated_text
+        assert "## Skip" in generated_text
+        assert "## Uncertain" not in generated_text
+        assert "acme/sales-dashboard#81" in generated_text
 
-        upload = _owner_edit_uncertain_to_crm_create(generated_text).encode("utf-8")
-        orch.store_upload(compiled.run.id, upload)
+        orch.store_upload(compiled.run.id, generated)
         executed = orch.confirm(compiled.run.id)
 
         assert executed.status == TriageRunStatus.EXECUTED
-        assert [call.title for call in tracker.calls] == [
-            "Sales dashboard export hangs",
-            "Синхронизация клиентов задерживается",
-        ]
-        assert str(tracker.calls[0].repository) == "acme/sales-dashboard"
-        assert str(tracker.calls[1].repository) == "acme/crm"
-        assert CRM_BODY in tracker.calls[1].body
+        assert [call.title for call in tracker.calls] == ["Задержка синхронизации клиентов"]
+        assert str(tracker.calls[0].repository) == "acme/crm"
         assert executed.execution_result is not None
         actions = [row.action for row in executed.execution_result.items]
-        assert actions.count(ExecutionAction.CREATE) == 2
-        assert actions.count(ExecutionAction.SKIP) == 0
+        assert actions.count(ExecutionAction.CREATE) == 1
+        assert actions.count(ExecutionAction.SKIP) == 1
+        skip = next(
+            row for row in executed.execution_result.items if row.action == ExecutionAction.SKIP
+        )
+        assert str(skip.issue) == "acme/sales-dashboard#81"
         for problem in ingested:
             stored_problem = db.problems.get(problem.id)
             assert stored_problem is not None
@@ -163,13 +148,10 @@ def test_demo_scenario_b_skips_existing_and_leaves_uncertain(tmp_path: Path) -> 
         assert compiled_a.run is not None
         generated_a = compiled_a.run.generated_markdown
         assert generated_a is not None
-        orch.store_upload(
-            compiled_a.run.id,
-            _owner_edit_uncertain_to_crm_create(generated_a.decode("utf-8")).encode("utf-8"),
-        )
+        orch.store_upload(compiled_a.run.id, generated_a)
         orch.confirm(compiled_a.run.id)
         creates_after_a = list(tracker.calls)
-        assert len(creates_after_a) == 2
+        assert len(creates_after_a) == 1
 
         ingested_b = _ingest(db, SCENARIO_B, start_message_id=10)
         mapping_b = {canned: stored.id for canned, stored in zip((201, 202), ingested_b)}

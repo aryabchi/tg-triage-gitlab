@@ -117,3 +117,77 @@ def test_uncertain_unknown_repo_passes() -> None:
     )
     assert items[0].outcome == TriageOutcome.UNCERTAIN
     assert items[0].repository is None
+
+
+def test_uncertain_configured_repo_passes() -> None:
+    data = {
+        "items": [
+            {
+                "problem_ids": [103],
+                "outcome": "uncertain",
+                "repository": "acme/crm",
+                "priority": "P2",
+                "title": "sync",
+                "body": "",
+                "rationale": "likely crm",
+            }
+        ]
+    }
+    items = validate_match(
+        data,
+        allowed_repos=ALLOWED,
+        pack=_pack_with_export_issue(),
+        problem_ids=(103,),
+    )
+    assert items[0].outcome == TriageOutcome.UNCERTAIN
+    assert items[0].repository == RepositoryId.parse("acme/crm")
+    assert items[0].existing_issue is None
+
+
+def test_match_omitted_existing_is_null() -> None:
+    data = {
+        "items": [
+            {
+                "problem_ids": [101],
+                "outcome": "create_new",
+                "repository": "acme/sales-dashboard",
+                "priority": "P1",
+                "title": "export hangs",
+                "body": "spinner",
+                "rationale": "new",
+            }
+        ]
+    }
+    items = validate_match(
+        data,
+        allowed_repos=ALLOWED,
+        pack=_pack_with_export_issue(),
+        problem_ids=(101,),
+    )
+    assert items[0].outcome == TriageOutcome.CREATE_NEW
+    assert items[0].existing_issue is None
+
+
+def test_uncertain_invented_repo_fails() -> None:
+    data = {
+        "items": [
+            {
+                "problem_ids": [103],
+                "outcome": "uncertain",
+                "repository": "acme/secret",
+                "existing": None,
+                "priority": None,
+                "title": "",
+                "body": "",
+                "rationale": "guess",
+            }
+        ]
+    }
+    with pytest.raises(LlmValidationError, match="not in config"):
+        validate_match(
+            data,
+            allowed_repos=ALLOWED,
+            pack=_pack_with_export_issue(),
+            problem_ids=(103,),
+        )
+

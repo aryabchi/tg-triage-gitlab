@@ -75,6 +75,8 @@ def test_match_prompt_includes_pack_identity_rule() -> None:
     assert isinstance(body, dict)
     system = body["messages"][0]["content"]
     assert "only identities present in the pack" in system.lower()
+    assert "existing: null" in system.lower()
+    assert 'repository must be "unknown"' in system.lower()
 
 
 def test_http_500_raises() -> None:
@@ -117,6 +119,23 @@ def test_http_401_is_not_retryable() -> None:
     with pytest.raises(LlmCallError) as caught:
         llm.cluster(_problems())
     assert caught.value.retryable is False
+
+
+def test_read_timeout_is_not_retryable() -> None:
+    """A hung match read fails closed instead of starting a second equally long wait."""
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("timed out")
+
+    http = httpx.Client(
+        transport=httpx.MockTransport(handler),
+        base_url="https://openrouter.ai/api/v1",
+    )
+    llm = HttpLlmJudgment(http, model="openai/gpt-oss-20b:free")
+    with pytest.raises(LlmCallError) as caught:
+        llm.cluster(_problems())
+    assert caught.value.retryable is False
+    assert "ReadTimeout" in str(caught.value)
 
 
 def test_connect_error_is_retryable() -> None:

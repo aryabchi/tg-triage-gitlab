@@ -79,8 +79,10 @@ def validate_match(
 ) -> tuple[TriageItem, ...]:
     """Map match JSON to TriageItems. Invented repos and unknown issue numbers fail.
 
-    Uncertain may use repository ``unknown``. Create requires a configured repo,
-    title, and body. Skip requires ``existing`` present in the snapshot.
+    Uncertain may use ``unknown`` or a configured repository (Markdown allows a
+    repo hint). Create requires a configured repo, title, and body. Skip requires
+    ``existing`` present in the snapshot. A missing ``existing`` key is treated
+    as null so a schema omission does not consume the JSON retry.
 
     Raises:
         LlmValidationError: On schema or identity failure.
@@ -136,13 +138,16 @@ def _match_item(
     allowed: set[str],
     snapshot: set[tuple[str, int]],
 ) -> TriageItem:
-    """Validate one match item and map it to a TriageItem."""
+    """Validate one match item and map it to a TriageItem.
+
+    ``existing`` may be omitted; that is the same as JSON null. Uncertain does
+    not keep an ``existing`` value even if the model sent one.
+    """
     mapping = _require_object(raw, "match item")
     required = (
         "problem_ids",
         "outcome",
         "repository",
-        "existing",
         "priority",
         "title",
         "body",
@@ -170,6 +175,7 @@ def _match_item(
             raise LlmValidationError("create_new requires a known repository")
         if not title.strip() or not body.strip():
             raise LlmValidationError("create_new requires title and body")
+        existing = None
     elif outcome == TriageOutcome.LINK_EXISTING:
         if existing is None:
             raise LlmValidationError("link_existing requires existing")
@@ -181,8 +187,8 @@ def _match_item(
             raise LlmValidationError(
                 f"existing issue not in snapshot: {existing}"
             )
-    elif outcome == TriageOutcome.UNCERTAIN and repository is not None:
-        raise LlmValidationError("uncertain must not invent a repository")
+    else:
+        existing = None
     return TriageItem(
         problem_ids=_require_problem_ids(mapping),
         outcome=outcome,

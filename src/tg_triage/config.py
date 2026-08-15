@@ -2,7 +2,8 @@
 
 Secrets never live in this module. Tests must pass an explicit env file and
 must not rely on a repository-root `.env`. Runtime LLM HTTP timeouts are
-module constants used by ``python -m tg_triage`` (local match can exceed 120s).
+module constants used by ``python -m tg_triage`` (local match can exceed 300s;
+the read timeout is 900s).
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ DEFAULT_YAML_PATH = REPO_ROOT / "config" / "demo.yaml"
 DEFAULT_LLM_BASE_URL = "http://localhost:11434/v1"
 DEFAULT_LLM_MODEL = "qwen3:8b"
 LLM_CONNECT_TIMEOUT = 10.0
-LLM_READ_TIMEOUT = 300.0
+LLM_READ_TIMEOUT = 900.0
 
 
 class MissingSettingsError(Exception):

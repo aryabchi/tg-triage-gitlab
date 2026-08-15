@@ -17,30 +17,30 @@ Live `SINCE` is **today’s date** (`YYYY-MM-DD`). Fake tests use `2026-08-13`.
 
 Repos in play (made-up names only): `{GITHUB_OWNER}/sales-dashboard`, `{GITHUB_OWNER}/crm`, `{GITHUB_OWNER}/customer-portal`.
 
-## Scenario A — Cluster + create + uncertain (human resolves one)
+## Scenario A — Cluster + skip seed export + create CRM
 
-Goal: two similar export reports become one Create; a vague sync report is Uncertain; owner resolves Uncertain to Create on `crm`.
+Goal: two similar export reports cluster and Skip-match seed issue `#N`; the sync report is Create on `crm`. Observed with host qwen3:8b (`debug/7`).
 
 | Step | What to do | Who | Expected |
 |---|---|---|---|
 | A1 | In the reporter **group**, send: `Экспорт дашборда продаж больше не работает. Крутится загрузка.` | Reporter | New `Problem`, `lifecycle=ingested`, original text preserved |
 | A2 | In the group, send: `На дашборде продаж экспорт зависает на спиннере. Нужен отчёт к планерке.` | Reporter | Second ingested Problem (different message id) |
 | A3 | In the group, send: `Синхронизация клиентов задерживается.` | Reporter | Third ingested Problem |
-| A4 | In a **DM** with the bot: `/compile SINCE` | List Owner | Bot sends unparsed `triage-run-<id>.md`. File has `## Legend`. Export reports share one `###` item under `## Create` (two Problem ids) **or** under `## Skip` if the model matched seed issue `#N` — if Skip, owner keeps the demo’s Create story by moving that block to `## Create` only when they judge it a new issue; prefer showing **clustering** (two ids, one item). Message A3 is under `## Uncertain` (`Repo: unknown`). Priority may be P1 on export. Compile can take several minutes on local Ollama; watch the console. |
-| A5 | Download the `.md`, edit outside Telegram: keep clustered export as Create on `sales-dashboard`; move the Uncertain `###` into `## Create`; set `Repo: {GITHUB_OWNER}/crm`; add a `Body`. Save. | List Owner | Edited file is the authority; generated file is stale |
-| A6 | Upload the edited `.md` in the same DM | List Owner | Run status `awaiting_execute`; bot stored bytes. If Telegram times out, resend the same file. |
-| A7 | `/execute` then tap **Confirm** (not Cancel) | List Owner | Two GitHub issues created (export + crm). Bot replies with two URLs. Seeded export issue is **not** commented on. SQLite: three Problems `linked`. |
+| A4 | In a **DM** with the bot: `/compile SINCE` | List Owner | Bot sends unparsed `triage-run-<id>.md`. File has `## Legend`. Export reports share one `###` under `## Skip` with `Existing: {GITHUB_OWNER}/sales-dashboard#N` (two Problem ids, priority may be P1). A3 is under `## Create` on `{GITHUB_OWNER}/crm` with a Body. No `## Uncertain` in this compile. Match can take several minutes on local Ollama; watch the console. |
+| A5 | Download the `.md`. Keep Skip and Create as generated (or tweak Body). Save. | List Owner | Edited file is the authority; generated file is stale |
+| A6 | Upload the `.md` in the same DM | List Owner | Run status `awaiting_execute`; bot stored bytes. If Telegram times out, resend the same file. |
+| A7 | `/execute` then tap **Confirm** (not Cancel) | List Owner | **One** GitHub issue created (crm). Skip recorded for `#N`. Seeded export issue is **not** commented on. SQLite: three Problems `linked`. |
 
 ## Scenario B — Skip existing + leave uncertain
 
-Goal: a later export report Skip-matches an existing issue; a vague portal-vs-CRM report stays Uncertain and is **not** executed.
+Goal: a later export report Skip-matches the same seed issue; a vague portal-vs-CRM report stays Uncertain and is **not** executed. Observed with host qwen3:8b (`debug/9`).
 
 | Step | What to do | Who | Expected |
 |---|---|---|---|
-| B0 | After Scenario A (or using seed issue `#N`), run `tg-triage-refresh` | Operator | Snapshot contains the export issue to match. Already-`linked` Problems will not re-enter compile |
+| B0 | After Scenario A, run `tg-triage-refresh` | Operator | Snapshot contains the export issue to match. Already-`linked` Problems will not re-enter compile |
 | B1 | In the group, send: `CSV-экспорт дашборда всё ещё висит — как раньше.` | Reporter | New ingested Problem (not the A1–A3 rows) |
 | B2 | In the group, send: `Что-то не так с клиентами, не понятно: портал или CRM.` | Reporter | New ingested Problem |
-| B3 | DM: `/compile SINCE` | List Owner | Item B1 → `## Skip` with `Existing: {GITHUB_OWNER}/sales-dashboard#N`. Item B2 → `## Uncertain` |
+| B3 | DM: `/compile SINCE` | List Owner | Item B1 → `## Skip` with `Existing: {GITHUB_OWNER}/sales-dashboard#N`. Item B2 → `## Uncertain` (`Repo: unknown`) |
 | B4 | Edit: **leave** Uncertain in `## Uncertain`. Keep Skip. Save and upload in DM | List Owner | Upload stored; Uncertain still not a Create |
 | B5 | `/execute` then **Confirm** | List Owner | **Zero** new GitHub creates. Skip recorded with `#N`. Problem B1 `linked` to that `IssueRef`. Problem B2 still `ingested`. Bot lists Skipped; no new URL for B2. A later `/compile` can pick up B2 again |
 

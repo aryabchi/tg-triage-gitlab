@@ -37,7 +37,7 @@ ollama pull qwen3:8b
 ollama serve
 ```
 
-Leave `LLM_API_KEY` empty. Compile cluster then match; match can take several minutes on CPU. The console logs each stage so a long wait is visible. LLM HTTP read timeout is 300 seconds; Telegram Bot API connect timeout is 30 seconds.
+Leave `LLM_API_KEY` empty. Compile cluster then match; match can take several minutes on CPU. The console logs each stage so a long wait is visible. LLM HTTP read timeout is 900 seconds; Telegram Bot API connect timeout is 30 seconds.
 
 To use OpenRouter instead, set `LLM_BASE_URL=https://openrouter.ai/api/v1`, `LLM_MODEL=openai/gpt-oss-20b:free`, and `LLM_API_KEY`. There is no in-process router.
 
