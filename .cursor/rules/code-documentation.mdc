@@ -1,0 +1,25 @@
+---
+alwaysApply: true
+---
+# Code Documentation Rules
+
+## Docstrings
+
+- Add a docstring to every public module, class, function, and method.
+- Docstrings must explain the purpose and behavior of the object, not restate its name or implementation.
+- Document non-obvious parameters, return values, side effects, invariants, and exceptions when relevant.
+- Private functions and methods should also have docstrings when their purpose or behavior is not immediately obvious from their name and implementation.
+- Keep docstrings concise. Do not add documentation that merely repeats self-evident code.
+- Update docstrings whenever behavior changes.
+
+## Self-documenting code
+
+- Prefer clear names and straightforward control flow over comments.
+- Code should be understandable without relying on comments wherever reasonably possible.
+- Extract a well-named function rather than using a comment to explain a complex block of code.
+- Avoid comments that merely describe what the next line does.
+
+Bad:
+```python
+# Increment retry counter
+retry_count += 1
