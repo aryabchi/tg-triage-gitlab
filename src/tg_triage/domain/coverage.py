@@ -4,8 +4,13 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Iterable, Sequence
+from typing import Protocol
 
-from tg_triage.domain.models import TriageItem
+
+class HasProblemIds(Protocol):
+    """Anything that lists the Problem ids it covers."""
+
+    problem_ids: Sequence[int]
 
 
 class CoverageError(ValueError):
@@ -37,7 +42,7 @@ class CoverageError(ValueError):
         super().__init__("coverage failed: " + ", ".join(parts))
 
 
-def assert_coverage(problem_ids: Iterable[int], items: Sequence[TriageItem]) -> None:
+def assert_coverage(problem_ids: Iterable[int], items: Sequence[HasProblemIds]) -> None:
     """Require a partition of ``problem_ids`` across ``items``.
 
     Each expected id must appear in exactly one item. Duplicate ids inside a
