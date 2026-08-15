@@ -34,15 +34,21 @@ class HttpLlmJudgment:
         self._api_key = api_key
         self._prompts_dir = prompts_dir or PROMPTS_DIR
 
-    def cluster(self, problems: Sequence[Problem]) -> str:
+    def cluster(self, problems: Sequence[Problem], *, retry: bool = False) -> str:
         """Ask the model to cluster reports. Returns JSON text, not yet validated."""
         payload = json.dumps(
             [{"id": problem.id, "original_text": problem.original_text} for problem in problems],
             ensure_ascii=False,
         )
-        return self._complete("cluster.md", payload)
+        return self._complete("cluster.md", payload, retry=retry)
 
-    def match(self, items: Sequence[ClusterItem], evidence_pack: EvidencePack) -> str:
+    def match(
+        self,
+        items: Sequence[ClusterItem],
+        evidence_pack: EvidencePack,
+        *,
+        retry: bool = False,
+    ) -> str:
         """Ask the model to match clusters to the snapshot. Returns JSON text."""
         payload = json.dumps(
             {
@@ -54,11 +60,13 @@ class HttpLlmJudgment:
             },
             ensure_ascii=False,
         )
-        return self._complete("match.md", payload)
+        return self._complete("match.md", payload, retry=retry)
 
-    def _complete(self, prompt_name: str, payload: str) -> str:
+    def _complete(self, prompt_name: str, payload: str, *, retry: bool = False) -> str:
         """POST chat.completions and return the assistant message content."""
         system, user = _render_prompt(self._prompts_dir / prompt_name, payload)
+        if retry:
+            user = f"{user}\nReturn valid JSON matching schema."
         headers: dict[str, str] = {}
         if self._api_key:
             headers["Authorization"] = f"Bearer {self._api_key}"

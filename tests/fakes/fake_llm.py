@@ -25,14 +25,20 @@ class FakeLlmJudgment:
         self.cluster_calls = 0
         self.match_calls = 0
 
-    def cluster(self, problems: Sequence[Problem]) -> str:
+    def cluster(self, problems: Sequence[Problem], *, retry: bool = False) -> str:
         """Pop the next cluster JSON string."""
         self.cluster_calls += 1
         if not self.cluster_replies:
             raise IndexError("FakeLlmJudgment has no cluster replies left")
         return self.cluster_replies.pop(0)
 
-    def match(self, items: Sequence[ClusterItem], evidence_pack: EvidencePack) -> str:
+    def match(
+        self,
+        items: Sequence[ClusterItem],
+        evidence_pack: EvidencePack,
+        *,
+        retry: bool = False,
+    ) -> str:
         """Pop the next match JSON string."""
         self.match_calls += 1
         if not self.match_replies:

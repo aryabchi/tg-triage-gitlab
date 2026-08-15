@@ -20,8 +20,14 @@ class ClusterItem:
 class LlmJudgment(Protocol):
     """Two-stage semantic judgments. Returns model JSON text, not a Markdown file."""
 
-    def cluster(self, problems: Sequence[Problem]) -> str:
+    def cluster(self, problems: Sequence[Problem], *, retry: bool = False) -> str:
         """Return JSON text grouping related reports. No fixture identities in this call."""
 
-    def match(self, items: Sequence[ClusterItem], evidence_pack: EvidencePack) -> str:
+    def match(
+        self,
+        items: Sequence[ClusterItem],
+        evidence_pack: EvidencePack,
+        *,
+        retry: bool = False,
+    ) -> str:
         """Return JSON text proposing create, skip, or uncertain against the snapshot."""

@@ -195,25 +195,35 @@ class SqliteProblemRepository:
         self._conn = connection
 
     def insert(self, problem: Problem) -> Problem:
-        """Persist a report; duplicate chat+message returns the existing row."""
+        """Persist a report; duplicate chat+message returns the existing row.
+
+        When ``problem.id`` is greater than 0, that id is stored so tests can
+        use known Problem numbers. Otherwise SQLite assigns the id.
+        """
+        columns = """
+            original_text, telegram_chat_id, telegram_message_id,
+            telegram_user_id, created_at, lifecycle, linked_issue
+        """
+        values = (
+            problem.original_text,
+            problem.chat_id,
+            problem.message_id,
+            problem.user_id,
+            _isoformat(problem.created_at),
+            problem.lifecycle.value,
+            str(problem.linked_issue) if problem.linked_issue else None,
+        )
         with self._conn:
-            self._conn.execute(
-                """
-                INSERT OR IGNORE INTO problems (
-                    original_text, telegram_chat_id, telegram_message_id,
-                    telegram_user_id, created_at, lifecycle, linked_issue
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    problem.original_text,
-                    problem.chat_id,
-                    problem.message_id,
-                    problem.user_id,
-                    _isoformat(problem.created_at),
-                    problem.lifecycle.value,
-                    str(problem.linked_issue) if problem.linked_issue else None,
-                ),
-            )
+            if problem.id > 0:
+                self._conn.execute(
+                    f"INSERT OR IGNORE INTO problems (id, {columns}) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (problem.id, *values),
+                )
+            else:
+                self._conn.execute(
+                    f"INSERT OR IGNORE INTO problems ({columns}) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    values,
+                )
         stored = self._get_by_message(problem.chat_id, problem.message_id)
         if stored is None:
             raise RuntimeError("insert did not persist a problem row")
