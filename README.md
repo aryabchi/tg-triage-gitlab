@@ -46,6 +46,6 @@ To run the bot (needs Telegram keys in `.env`; GitHub token for Confirm; host Ol
 python -m tg_triage
 ```
 
-Live BotFather, group, seed/refresh/drop, and Ollama steps: [docs/operator_setup.md](docs/operator_setup.md).
+Live BotFather, group, seed/refresh/drop, and Ollama steps: [docs/operator_setup.md](docs/operator_setup.md). Demo walk (Scenarios A then B): [docs/demo_script.md](docs/demo_script.md).
 
 Default `pytest` still needs no tokens.

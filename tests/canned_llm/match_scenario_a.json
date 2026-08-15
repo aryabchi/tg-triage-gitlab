@@ -1,0 +1,24 @@
+{
+  "items": [
+    {
+      "problem_ids": [101, 102],
+      "outcome": "create_new",
+      "repository": "acme/sales-dashboard",
+      "existing": null,
+      "priority": "P1",
+      "title": "Sales dashboard export hangs",
+      "body": "Sales dashboard export never finishes (spinner).\nReported by 2 users.",
+      "rationale": "два похожих отчёта про экспорт"
+    },
+    {
+      "problem_ids": [103],
+      "outcome": "uncertain",
+      "repository": "unknown",
+      "existing": null,
+      "priority": null,
+      "title": "Синхронизация клиентов задерживается",
+      "body": "",
+      "rationale": "Could be acme/crm or acme/customer-portal"
+    }
+  ]
+}
