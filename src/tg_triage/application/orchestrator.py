@@ -55,6 +55,14 @@ class ApplicationOrchestrator:
             superseded_warning=bool(open_runs),
         )
 
+    def latest_open_run_id(self) -> int:
+        """Return the newest pending or awaiting run.
+
+        Raises:
+            OrchestratorError: If there is no open run.
+        """
+        return self._resolve(None).id
+
     def store_upload(self, run_id: int, markdown: bytes) -> TriageRun:
         """Store owner-edited Markdown on the run and mark it awaiting execute.
 

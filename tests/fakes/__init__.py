@@ -3,11 +3,15 @@
 from tests.fakes.fake_issue_tracker import FakeIssueTracker
 from tests.fakes.fake_llm import FakeLlmJudgment
 from tests.fakes.fake_problem_repository import FakeProblemRepository
+from tests.fakes.fake_telegram import ConfirmPrompt, FakeTelegramGateway, SentDocument
 from tests.fakes.fake_triage_run_repository import FakeTriageRunRepository
 
 __all__ = [
+    "ConfirmPrompt",
     "FakeIssueTracker",
     "FakeLlmJudgment",
     "FakeProblemRepository",
+    "FakeTelegramGateway",
     "FakeTriageRunRepository",
+    "SentDocument",
 ]

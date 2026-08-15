@@ -39,3 +39,11 @@ pytest -q
 ```
 
 Leave secrets in `.env` blank for default tests. Tests use a temporary env file and do not read the real `.env`.
+
+To run the bot (needs Telegram keys in `.env`; GitHub token for Confirm):
+
+```text
+python -m tg_triage
+```
+
+Default `pytest` still needs no tokens.

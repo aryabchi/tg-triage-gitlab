@@ -1,1 +1,1 @@
-"""Infrastructure adapters: SQLite, fixture files, and GitHub REST."""
+"""Infrastructure adapters: SQLite, fixture files, GitHub REST, and Telegram."""
