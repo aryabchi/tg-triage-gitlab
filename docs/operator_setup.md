@@ -23,7 +23,7 @@ Copy `.env.example` to `.env` and fill secrets. Keys:
 | `GITHUB_OWNER` | Live GitHub user/org; overlays YAML `acme/` |
 | `LLM_BASE_URL` | Default `http://localhost:11434/v1` (Ollama) |
 | `LLM_API_KEY` | Unused for Ollama; OpenRouter key if you switch |
-| `LLM_MODEL` | Default `qwen3:8b` |
+| `LLM_MODEL` | Default `gpt-oss:20b-cloud` - fast + [Free Cloud usage](https://ollama.com/settings`), then `qwen3:8b` - local & slow |
 | `SQLITE_PATH` | Local DB file (gitignored) |
 
 Restart `python -m tg_triage` after any `.env` change.
