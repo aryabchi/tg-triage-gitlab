@@ -438,11 +438,11 @@ One OpenAI-compatible HTTP client. Tests use a fake port. Runtime provider is co
 
 | Profile | Base URL | Model | Auth |
 |---|---|---|---|
-| **default** | `https://openrouter.ai/api/v1` | `openai/gpt-oss-20b:free` | OpenRouter API key |
-| fallback (offline/dev) | `http://localhost:11434/v1` | `qwen3:8b` | none (Ollama) |
+| **default** | `http://localhost:11434/v1` | `qwen3:8b` | none (Ollama) |
+| fallback | `https://openrouter.ai/api/v1` | `openai/gpt-oss-20b:free` | OpenRouter API key |
 | optional spike | `https://openrouter.ai/api/v1` | `nvidia/nemotron-3.5-lightning:free` | OpenRouter API key |
 
-**Default: `openai/gpt-oss-20b:free`.** The MVP’s failure mode is invalid JSON / broken coverage / invented repos; 20B is the strongest of the three listed options for two-stage structured judgments. Local `qwen3:8b` is the hot backup if OpenRouter’s free tier is down mid-demo. Nemotron lightning:free is worth a spike, not the default.
+**Default: host Ollama `qwen3:8b`.** Live Telegram compile against OpenRouter free-tier 429 was unreliable; the same host already runs Ollama. OpenRouter remains a config swap, not a router. Nemotron lightning:free is worth a spike, not the default.
 
 Do not add a multi-provider SDK or model router. Swap `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL`.
 
@@ -568,7 +568,7 @@ Config stays in env + a small config file, not the DB:
 
 - Telegram: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_GROUP_CHAT_ID`, owner user id(s)
 - GitHub: `GITHUB_TOKEN`, owner/org, demo `owner/repo` list, `K` (default 10), README truncation (default 2000 chars), issue-body truncation (default 1000 chars)
-- LLM: `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL` (default OpenRouter `openai/gpt-oss-20b:free`)
+- LLM: `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL` (default host Ollama `qwen3:8b`)
 
 ---
 
@@ -849,10 +849,10 @@ Human Decision is the owner’s edit between `sendDocument` and upload — no so
 **Alternative:** One script that creates repos and writes fixtures; or manual GitHub UI only.  
 **Why rejected:** Merged seed+refresh duplicates issues on re-run; manual seed is not reproducible for the demo script.
 
-**Decision:** One OpenAI-compatible LLM client. Default `openai/gpt-oss-20b:free` on OpenRouter; Ollama `qwen3:8b` as offline fallback; Nemotron lightning:free optional spike.  
-**Reason:** Structured JSON and coverage matter more than prose; 20B is the strongest of the listed options; config swap is enough.  
-**Alternative:** Local 8B as demo default; multi-provider SDK; autonomous tool loop.  
-**Why rejected:** 8B is retry-prone on multi-item JSON; extra SDKs are unjustified; free OpenRouter outage is mitigated by the Ollama backup, not by a router product.
+**Decision:** One OpenAI-compatible LLM client. Default host Ollama `qwen3:8b`; OpenRouter `openai/gpt-oss-20b:free` as config fallback; Nemotron lightning:free optional spike.  
+**Reason:** Live OpenRouter free-tier 429 blocked compile; the host already runs Ollama; config swap is enough.  
+**Alternative:** Keep OpenRouter as code default; multi-provider SDK; autonomous tool loop.  
+**Why rejected:** Free OpenRouter was not demo-reliable on this host; extra SDKs are unjustified; a router product is still out of scope.
 
 ---
 

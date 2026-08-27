@@ -1,0 +1,24 @@
+{
+  "items": [
+    {
+      "problem_ids": [201],
+      "outcome": "link_existing",
+      "repository": "acme/sales-dashboard",
+      "existing": "acme/sales-dashboard#81",
+      "priority": "P1",
+      "title": "CSV-экспорт дашборда всё ещё висит — как раньше",
+      "body": "CSV-экспорт дашборда всё ещё висит — как раньше.",
+      "rationale": "Совпадает с существующей проблемой в репозитории acme/sales-dashboard (issue #81) о не завершаемом экспорте CSV."
+    },
+    {
+      "problem_ids": [202],
+      "outcome": "uncertain",
+      "repository": "unknown",
+      "existing": null,
+      "priority": "P2",
+      "title": "Что-то не так с клиентами, не понятно: портал или CRM",
+      "body": "Что-то не так с клиентами, не понятно: портал или CRM.",
+      "rationale": "Нет достаточных данных для определения репозитория (портал или CRM), требуется дополнительная информация."
+    }
+  ]
+}

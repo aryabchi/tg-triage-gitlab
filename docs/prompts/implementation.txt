@@ -1,0 +1,44 @@
+The implementation plan @docs/mvp_implementation_plan.md is approved.
+Execute it incrementally, one step at a time.
+
+Rules:
+
+1. Follow the implementation plan in order unless a concrete technical
+   dependency requires a deviation.
+
+2. Before implementing each step:
+   - briefly state what you are about to implement;
+   - identify the plan step being executed;
+
+3. Implement ONLY the current step.
+   Do not jump ahead and implement future steps.
+
+4. After completing the step:
+   - run the verification procedure defined in the plan;
+   - report the actual result;
+   - fix problems discovered by verification when they belong to
+     the current step.
+
+5. Do not modify the architecture @docs/mvp_architecture.md or implementation plan silently.
+   If implementation reveals that the plan or architecture is wrong - STOP and explain:
+   - what was discovered;
+   - why the current plan cannot be followed;
+   - what change you recommend.
+
+6. Keep each step independently understandable and preferably
+   independently committable.
+
+7. Do not add functionality that is not required by the current step,
+   MVP specification, or approved architecture.
+
+8. Prefer simpler implementation consistent with the architecture.
+   Do not introduce unnecessary abstractions.
+
+9. Follow all project-specific Cursor rules.
+
+10. Do not push anything to a remote repository.
+
+Start with Step 1 only.
+
+After Step 1 is verified, stop and wait for my instructions before
+continuing to Step 2. Same applies to next Steps until I state the opposite.

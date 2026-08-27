@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tg-triage"
+version = "0.1.0"
+description = "Ingest Telegram group problems, triage against GitHub fixtures, create or skip issues after owner confirmation."
+readme = "README.md"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "python-telegram-bot>=21",
+    "httpx",
+    "pydantic>=2",
+    "pydantic-settings>=2",
+    "pyyaml>=6",
+]
+
+[project.scripts]
+tg-triage-seed = "tg_triage.operator.seed:main"
+tg-triage-refresh = "tg_triage.operator.refresh:main"
+tg-triage-drop = "tg_triage.operator.drop:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "ruff>=0.9",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+tg_triage = ["llm/prompts/*.md", "llm/schemas/*.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "smoke: live network smoke tests (opt-in with RUN_*_SMOKE=1)",
+]

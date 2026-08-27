@@ -1,0 +1,24 @@
+{
+  "items": [
+    {
+      "problem_ids": [101, 102],
+      "outcome": "link_existing",
+      "repository": "acme/sales-dashboard",
+      "existing": "acme/sales-dashboard#81",
+      "priority": "P1",
+      "title": "Экспорт дашборда продаж не завершается",
+      "body": "Проблема с экспортом дашборда продаж: выгрузка CSV блокирует интерфейс и не завершается.",
+      "rationale": "Совпадает с существующей проблемой в репозитории acme/sales-dashboard (issue #81), описанной в README и метаданных."
+    },
+    {
+      "problem_ids": [103],
+      "outcome": "create_new",
+      "repository": "acme/crm",
+      "existing": null,
+      "priority": "P2",
+      "title": "Задержка синхронизации клиентов",
+      "body": "Задержка синхронизации клиентов между системами, возможно, связанная с заданиями синхронизации.",
+      "rationale": "Репозиторий acme/crm содержит метаданные и README о синхронизации клиентов, но нет соответствующей проблемы в истории issues."
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "items": [
+    {
+      "problem_ids": [101, 102, 103, 104],
+      "outcome": "create_new",
+      "repository": "acme/secret",
+      "existing": null,
+      "priority": "P2",
+      "title": "Invented",
+      "body": "should fail",
+      "rationale": "invented repo"
+    }
+  ]
+}
